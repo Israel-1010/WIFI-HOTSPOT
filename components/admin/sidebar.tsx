@@ -29,6 +29,7 @@ const navigation = [
   { name: "Dashboard", href: "/admin", icon: Home },
   { name: "Clientes", href: "/admin/clientes", icon: Building2 },
   { name: "Hotspots", href: "/admin/hotspots", icon: Wifi },
+  { name: "Operações / NOC", href: "/admin/operacoes", icon: Activity },
   { name: "Financeiro", href: "/admin/financeiro", icon: DollarSign },
   { name: "Equipe", href: "/admin/equipe", icon: UserCog },
   { name: "Relatórios", href: "/admin/relatorios", icon: FileText },

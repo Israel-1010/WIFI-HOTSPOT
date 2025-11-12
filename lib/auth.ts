@@ -8,7 +8,7 @@ export interface User {
   username: string
   email: string
   nome_completo: string
-  role: "admin_geral" | "admin_revenda" | "cliente" | "usuario"
+  role: "admin_geral" | "admin_revenda" | "operador_noc" | "cliente" | "usuario"
   revenda_id?: string
   cliente_id?: string
   permissoes: Record<string, boolean>
