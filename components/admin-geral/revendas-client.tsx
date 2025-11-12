@@ -6,7 +6,17 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, Building2, Globe, Mail, Phone } from "lucide-react"
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Building2,
+  Globe,
+  Mail,
+  Phone,
+  Eye,
+  EyeOff,
+} from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,6 +48,7 @@ interface Revenda {
   cor_primaria?: string
   cor_secundaria?: string
   username?: string | null
+  senha_hash?: string | null
 }
 
 interface Plano {
@@ -113,6 +124,8 @@ const normalizeDomain = (value: string) =>
     .replace(/\/$/, "")
     .toLowerCase()
 
+const PASSWORD_PLACEHOLDER = "********"
+
 export function RevendasClient({ revendas: initialRevendas }: { revendas: Revenda[] }) {
   const [revendas, setRevendas] = useState(initialRevendas)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -120,6 +133,10 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
   const [createForm, setCreateForm] = useState<RevendaFormState>(INITIAL_CREATE_FORM)
   const [editForm, setEditForm] = useState<RevendaFormState | null>(null)
   const [planos, setPlanos] = useState<Plano[]>([])
+  const [isCreatePasswordVisible, setIsCreatePasswordVisible] = useState(false)
+  const [isEditPasswordVisible, setIsEditPasswordVisible] = useState(false)
+  const [isEditPasswordDirty, setIsEditPasswordDirty] = useState(false)
+  const [editPasswordInitialValue, setEditPasswordInitialValue] = useState(PASSWORD_PLACEHOLDER)
   const router = useRouter()
 
   useEffect(() => {
@@ -168,6 +185,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
       setIsCreateOpen(false)
       setCreateForm(INITIAL_CREATE_FORM)
+      setIsCreatePasswordVisible(false)
       router.refresh()
     } else {
       alert(result.error)
@@ -198,7 +216,11 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
       username: editForm.username.trim(),
     }
 
-    if (editForm.senha) {
+    if (isEditPasswordDirty) {
+      if (!editForm.senha.trim()) {
+        alert("Informe uma senha válida ou mantenha a atual")
+        return
+      }
       payload.senha = editForm.senha
     }
 
@@ -214,6 +236,9 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
       setEditingRevenda(null)
       setEditForm(null)
+      setIsEditPasswordVisible(false)
+      setIsEditPasswordDirty(false)
+      setEditPasswordInitialValue(PASSWORD_PLACEHOLDER)
       router.refresh()
     } else {
       alert(result.error)
@@ -241,6 +266,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
             setIsCreateOpen(open)
             if (!open) {
               setCreateForm(INITIAL_CREATE_FORM)
+              setIsCreatePasswordVisible(false)
             }
           }}
         >
@@ -348,17 +374,34 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                   </div>
                   <div>
                     <Label htmlFor="senha">Senha *</Label>
-                    <Input
-                      id="senha"
-                      name="senha"
-                      type="password"
-                      placeholder="••••••••"
-                      value={createForm.senha}
-                      onChange={(event) =>
-                        setCreateForm((prev) => ({ ...prev, senha: event.target.value }))
-                      }
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="senha"
+                        name="senha"
+                        type={isCreatePasswordVisible ? "text" : "password"}
+                        placeholder="••••••••"
+                        className="pr-10"
+                        value={createForm.senha}
+                        onChange={(event) =>
+                          setCreateForm((prev) => ({ ...prev, senha: event.target.value }))
+                        }
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-2 flex items-center text-muted-foreground"
+                        onClick={() => setIsCreatePasswordVisible((prev) => !prev)}
+                      >
+                        {isCreatePasswordVisible ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">
+                          {isCreatePasswordVisible ? "Ocultar senha" : "Mostrar senha"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -474,6 +517,9 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
           if (!open) {
             setEditingRevenda(null)
             setEditForm(null)
+            setIsEditPasswordVisible(false)
+            setIsEditPasswordDirty(false)
+            setEditPasswordInitialValue(PASSWORD_PLACEHOLDER)
           }
         }}
       >
@@ -588,19 +634,39 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                   </div>
                   <div>
                     <Label htmlFor="edit-senha">Senha *</Label>
-                    <Input
-                      id="edit-senha"
-                      name="senha"
-                      type="password"
-                      placeholder="••••••••"
-                      value={editForm.senha}
-                      onChange={(event) =>
-                        setEditForm((prev) =>
-                          prev ? { ...prev, senha: event.target.value } : prev,
-                        )
-                      }
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="edit-senha"
+                        name="senha"
+                        type={isEditPasswordVisible ? "text" : "password"}
+                        placeholder="••••••••"
+                        className="pr-10"
+                        value={editForm.senha}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          setEditForm((prev) => (prev ? { ...prev, senha: value } : prev))
+                          setIsEditPasswordDirty(value !== editPasswordInitialValue)
+                        }}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-2 flex items-center text-muted-foreground"
+                        onClick={() => setIsEditPasswordVisible((prev) => !prev)}
+                      >
+                        {isEditPasswordVisible ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">
+                          {isEditPasswordVisible ? "Ocultar senha" : "Mostrar senha"}
+                        </span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      A senha atual é carregada automaticamente; altere apenas se desejar uma nova.
+                    </p>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -788,6 +854,11 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                   className="flex-1 bg-transparent"
                   onClick={() => {
                     setEditingRevenda(revenda)
+                    setIsEditPasswordVisible(false)
+                    const hasStoredPassword = Boolean(revenda.senha_hash)
+                    const initialPasswordValue = hasStoredPassword ? revenda.senha_hash! : ""
+                    setEditPasswordInitialValue(initialPasswordValue)
+                    setIsEditPasswordDirty(!hasStoredPassword)
                     setEditForm({
                       nome: revenda.nome,
                       cnpj: formatCNPJ(revenda.cnpj || ""),
@@ -801,7 +872,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                       limite_hotspots: String(revenda.limite_hotspots ?? 0),
                       limite_usuarios_simultaneos: String(revenda.limite_usuarios_simultaneos ?? 0),
                       username: revenda.username || "",
-                      senha: "",
+                      senha: initialPasswordValue,
                     })
                   }}
                 >

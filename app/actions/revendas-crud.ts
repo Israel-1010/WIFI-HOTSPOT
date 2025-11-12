@@ -33,7 +33,7 @@ async function fetchRevendaWithExtras(supabase: SupabaseServerClient, id: string
   const [adminUserResult, clientesCountResult] = await Promise.all([
     supabase
       .from("usuarios")
-      .select("username, email, telefone")
+      .select("username, email, telefone, senha_hash")
       .eq("revenda_id", id)
       .eq("role", "admin_revenda")
       .maybeSingle(),
@@ -58,6 +58,7 @@ async function fetchRevendaWithExtras(supabase: SupabaseServerClient, id: string
     username: adminUserResult.data?.username ?? null,
     email: revenda.email || adminUserResult.data?.email || null,
     telefone: revenda.telefone || adminUserResult.data?.telefone || null,
+    senha_hash: adminUserResult.data?.senha_hash ?? null,
   }
 }
 
@@ -123,7 +124,7 @@ export async function getRevendas() {
           .eq("role", "cliente"),
         supabase
           .from("usuarios")
-          .select("id, username, email, telefone")
+          .select("id, username, email, telefone, senha_hash")
           .eq("revenda_id", revenda.id)
           .eq("role", "admin_revenda")
           .maybeSingle(),
@@ -135,6 +136,7 @@ export async function getRevendas() {
         username: adminUser?.username || null,
         email: revenda.email || adminUser?.email || null,
         telefone: revenda.telefone || adminUser?.telefone || null,
+        senha_hash: adminUser?.senha_hash || null,
       }
     }),
   )
