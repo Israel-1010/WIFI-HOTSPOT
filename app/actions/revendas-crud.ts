@@ -57,15 +57,26 @@ export async function getRevendas() {
   // Buscar contagem de clientes para cada revenda
   const revendasComContagem = await Promise.all(
     (revendas || []).map(async (revenda) => {
-      const { count } = await supabase
-        .from("usuarios")
-        .select("*", { count: "exact", head: true })
-        .eq("revenda_id", revenda.id)
-        .eq("role", "cliente")
+      const [{ count }, { data: adminUser }] = await Promise.all([
+        supabase
+          .from("usuarios")
+          .select("*", { count: "exact", head: true })
+          .eq("revenda_id", revenda.id)
+          .eq("role", "cliente"),
+        supabase
+          .from("usuarios")
+          .select("id, username, email, telefone")
+          .eq("revenda_id", revenda.id)
+          .eq("role", "admin_revenda")
+          .maybeSingle(),
+      ])
 
       return {
         ...revenda,
         total_clientes: count || 0,
+        username: adminUser?.username || null,
+        email: revenda.email || adminUser?.email || null,
+        telefone: revenda.telefone || adminUser?.telefone || null,
       }
     }),
   )
@@ -109,6 +120,8 @@ export async function createRevenda(data: RevendaFormData) {
     .insert({
       nome: data.nome,
       cnpj: data.cnpj,
+      email: data.email,
+      telefone: data.telefone,
       dominio: data.dominio,
       plano_id: data.plano_id,
       logo_url: data.logo_url,
@@ -160,17 +173,70 @@ export async function createRevenda(data: RevendaFormData) {
 export async function updateRevenda(id: string, data: Partial<RevendaFormData>) {
   const supabase = await createClient()
 
+  const { senha, username, ...rest } = data
+
+  const revendaData = Object.fromEntries(
+    Object.entries({
+      ...rest,
+      atualizado_em: new Date().toISOString(),
+    }).filter(([, value]) => value !== undefined),
+  )
+
   const { error } = await supabase
     .from("revendas")
-    .update({
-      ...data,
-      atualizado_em: new Date().toISOString(),
-    })
+    .update(revendaData)
     .eq("id", id)
 
   if (error) {
     console.error("[v0] Erro ao atualizar revenda:", error)
     return { success: false, error: error.message }
+  }
+
+  if (senha || username || rest.email || rest.telefone) {
+    const { data: adminUser, error: adminUserError } = await supabase
+      .from("usuarios")
+      .select("id")
+      .eq("revenda_id", id)
+      .eq("role", "admin_revenda")
+      .maybeSingle()
+
+    if (adminUserError) {
+      console.error("[v0] Erro ao buscar admin da revenda:", adminUserError)
+      return { success: false, error: adminUserError.message }
+    }
+
+    if (adminUser?.id) {
+      const userUpdate: Record<string, unknown> = {}
+
+      if (username) {
+        userUpdate.username = username
+      }
+
+      if (rest.email) {
+        userUpdate.email = rest.email
+      }
+
+      if (rest.telefone) {
+        userUpdate.telefone = rest.telefone
+      }
+
+      if (senha) {
+        const encoder = new TextEncoder()
+        const data_senha = encoder.encode(senha)
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data_senha)
+        const hashArray = Array.from(new Uint8Array(hashBuffer))
+        userUpdate.senha_hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+      }
+
+      if (Object.keys(userUpdate).length > 0) {
+        const { error: userError } = await supabase.from("usuarios").update(userUpdate).eq("id", adminUser.id)
+
+        if (userError) {
+          console.error("[v0] Erro ao atualizar usuário admin da revenda:", userError)
+          return { success: false, error: userError.message }
+        }
+      }
+    }
   }
 
   revalidatePath("/admin-geral/revendas")

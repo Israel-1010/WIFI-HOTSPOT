@@ -31,12 +31,13 @@ interface Revenda {
   status: string
   limite_clientes: number
   limite_hotspots: number
+  limite_usuarios_simultaneos?: number
+  plano_id?: string
   total_clientes?: number
   plano?: { nome: string; preco_mensal: number }
   cor_primaria?: string
   cor_secundaria?: string
-  username?: string
-  senha?: string
+  username?: string | null
 }
 
 interface Plano {
@@ -102,11 +103,13 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
       cnpj: formData.get("cnpj") as string,
       email: formData.get("email") as string,
       telefone: formData.get("telefone") as string,
+      dominio: formData.get("dominio") as string,
       cor_primaria: formData.get("cor_primaria") as string,
       cor_secundaria: formData.get("cor_secundaria") as string,
       limite_clientes: Number.parseInt(formData.get("limite_clientes") as string),
       limite_hotspots: Number.parseInt(formData.get("limite_hotspots") as string),
       limite_usuarios_simultaneos: Number.parseInt(formData.get("limite_usuarios_simultaneos") as string),
+      plano_id: formData.get("plano_id") as string,
       username: formData.get("username") as string,
       senha: formData.get("senha") as string,
     }
@@ -263,18 +266,18 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                 </div>
                 <div>
                   <Label htmlFor="edit-cnpj">CNPJ *</Label>
-                  <Input id="edit-cnpj" name="cnpj" defaultValue={editingRevenda.cnpj} required />
+                  <Input id="edit-cnpj" name="cnpj" defaultValue={editingRevenda.cnpj || ""} required />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="edit-email">Email *</Label>
-                  <Input id="edit-email" name="email" type="email" defaultValue={editingRevenda.email} required />
+                  <Input id="edit-email" name="email" type="email" defaultValue={editingRevenda.email || ""} required />
                 </div>
                 <div>
                   <Label htmlFor="edit-telefone">Telefone *</Label>
-                  <Input id="edit-telefone" name="telefone" defaultValue={editingRevenda.telefone} required />
+                  <Input id="edit-telefone" name="telefone" defaultValue={editingRevenda.telefone || ""} required />
                 </div>
               </div>
 
@@ -298,7 +301,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     <Input
                       id="edit-username"
                       name="username"
-                      defaultValue={editingRevenda.username || "admin"}
+                      defaultValue={editingRevenda.username || ""}
                       placeholder="admin"
                       required
                     />
@@ -315,7 +318,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
               <div>
                 <Label htmlFor="edit-plano_id">Plano *</Label>
-                <Select name="plano_id" required>
+                <Select name="plano_id" defaultValue={editingRevenda.plano_id} required>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione um plano" />
                   </SelectTrigger>
@@ -377,7 +380,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-limite_usuarios_simultaneos"
                     name="limite_usuarios_simultaneos"
                     type="number"
-                    defaultValue={100}
+                    defaultValue={editingRevenda.limite_usuarios_simultaneos || 0}
                     required
                   />
                 </div>
