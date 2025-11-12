@@ -46,10 +46,79 @@ interface Plano {
   preco_mensal: number
 }
 
+interface RevendaFormState {
+  nome: string
+  cnpj: string
+  email: string
+  telefone: string
+  dominio: string
+  plano_id: string
+  cor_primaria: string
+  cor_secundaria: string
+  limite_clientes: string
+  limite_hotspots: string
+  limite_usuarios_simultaneos: string
+  username: string
+  senha: string
+}
+
+const INITIAL_CREATE_FORM: RevendaFormState = {
+  nome: "",
+  cnpj: "",
+  email: "",
+  telefone: "",
+  dominio: "",
+  plano_id: "",
+  cor_primaria: "#3b82f6",
+  cor_secundaria: "#1e40af",
+  limite_clientes: "10",
+  limite_hotspots: "5",
+  limite_usuarios_simultaneos: "100",
+  username: "",
+  senha: "",
+}
+
+const formatCNPJ = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 14)
+
+  if (digits.length <= 2) return digits
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`
+  if (digits.length <= 12)
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`
+
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`
+}
+
+const normalizeCNPJ = (value: string) => value.replace(/\D/g, "").slice(0, 14)
+
+const formatPhone = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+
+  if (digits.length <= 2) return digits
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
+const normalizePhone = (value: string) => value.replace(/\D/g, "").slice(0, 11)
+
+const formatEmail = (value: string) => value.replace(/\s+/g, "").toLowerCase()
+
+const normalizeDomain = (value: string) =>
+  value
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "")
+    .toLowerCase()
+
 export function RevendasClient({ revendas: initialRevendas }: { revendas: Revenda[] }) {
   const [revendas, setRevendas] = useState(initialRevendas)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingRevenda, setEditingRevenda] = useState<Revenda | null>(null)
+  const [createForm, setCreateForm] = useState<RevendaFormState>(INITIAL_CREATE_FORM)
+  const [editForm, setEditForm] = useState<RevendaFormState | null>(null)
   const [planos, setPlanos] = useState<Plano[]>([])
   const router = useRouter()
 
@@ -64,28 +133,41 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const formData = new FormData(e.currentTarget)
 
-    const data: RevendaFormData = {
-      nome: formData.get("nome") as string,
-      cnpj: formData.get("cnpj") as string,
-      email: formData.get("email") as string,
-      telefone: formData.get("telefone") as string,
-      dominio: formData.get("dominio") as string,
-      plano_id: formData.get("plano_id") as string,
-      cor_primaria: formData.get("cor_primaria") as string,
-      cor_secundaria: formData.get("cor_secundaria") as string,
-      limite_clientes: Number.parseInt(formData.get("limite_clientes") as string),
-      limite_hotspots: Number.parseInt(formData.get("limite_hotspots") as string),
-      limite_usuarios_simultaneos: Number.parseInt(formData.get("limite_usuarios_simultaneos") as string),
-      username: formData.get("username") as string,
-      senha: formData.get("senha") as string,
+    if (!createForm.plano_id) {
+      alert("Selecione um plano antes de criar a revenda")
+      return
     }
 
-    const result = await createRevenda(data)
+    const payload: RevendaFormData = {
+      nome: createForm.nome.trim(),
+      cnpj: normalizeCNPJ(createForm.cnpj),
+      email: formatEmail(createForm.email),
+      telefone: normalizePhone(createForm.telefone),
+      dominio: normalizeDomain(createForm.dominio),
+      plano_id: createForm.plano_id,
+      cor_primaria: createForm.cor_primaria,
+      cor_secundaria: createForm.cor_secundaria,
+      limite_clientes: Number.parseInt(createForm.limite_clientes || "0", 10),
+      limite_hotspots: Number.parseInt(createForm.limite_hotspots || "0", 10),
+      limite_usuarios_simultaneos: Number.parseInt(createForm.limite_usuarios_simultaneos || "0", 10),
+      username: createForm.username.trim(),
+      senha: createForm.senha,
+    }
+
+    const result = await createRevenda(payload)
 
     if (result.success) {
+      if (result.data) {
+        const novaRevenda = result.data as Revenda
+        setRevendas((prev) => {
+          const filtered = prev.filter((revenda) => revenda.id !== novaRevenda.id)
+          return [novaRevenda, ...filtered]
+        })
+      }
+
       setIsCreateOpen(false)
+      setCreateForm(INITIAL_CREATE_FORM)
       router.refresh()
     } else {
       alert(result.error)
@@ -94,30 +176,44 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!editingRevenda) return
+    if (!editingRevenda || !editForm) return
 
-    const formData = new FormData(e.currentTarget)
-
-    const data: Partial<RevendaFormData> = {
-      nome: formData.get("nome") as string,
-      cnpj: formData.get("cnpj") as string,
-      email: formData.get("email") as string,
-      telefone: formData.get("telefone") as string,
-      dominio: formData.get("dominio") as string,
-      cor_primaria: formData.get("cor_primaria") as string,
-      cor_secundaria: formData.get("cor_secundaria") as string,
-      limite_clientes: Number.parseInt(formData.get("limite_clientes") as string),
-      limite_hotspots: Number.parseInt(formData.get("limite_hotspots") as string),
-      limite_usuarios_simultaneos: Number.parseInt(formData.get("limite_usuarios_simultaneos") as string),
-      plano_id: formData.get("plano_id") as string,
-      username: formData.get("username") as string,
-      senha: formData.get("senha") as string,
+    if (!editForm.plano_id) {
+      alert("Selecione um plano para a revenda")
+      return
     }
 
-    const result = await updateRevenda(editingRevenda.id, data)
+    const payload: Partial<RevendaFormData> = {
+      nome: editForm.nome.trim(),
+      cnpj: normalizeCNPJ(editForm.cnpj),
+      email: formatEmail(editForm.email),
+      telefone: normalizePhone(editForm.telefone),
+      dominio: normalizeDomain(editForm.dominio),
+      cor_primaria: editForm.cor_primaria,
+      cor_secundaria: editForm.cor_secundaria,
+      limite_clientes: Number.parseInt(editForm.limite_clientes || "0", 10),
+      limite_hotspots: Number.parseInt(editForm.limite_hotspots || "0", 10),
+      limite_usuarios_simultaneos: Number.parseInt(editForm.limite_usuarios_simultaneos || "0", 10),
+      plano_id: editForm.plano_id,
+      username: editForm.username.trim(),
+    }
+
+    if (editForm.senha) {
+      payload.senha = editForm.senha
+    }
+
+    const result = await updateRevenda(editingRevenda.id, payload)
 
     if (result.success) {
+      if (result.data) {
+        const revendaAtualizada = result.data as Revenda
+        setRevendas((prev) =>
+          prev.map((revenda) => (revenda.id === revendaAtualizada.id ? revendaAtualizada : revenda)),
+        )
+      }
+
       setEditingRevenda(null)
+      setEditForm(null)
       router.refresh()
     } else {
       alert(result.error)
@@ -130,7 +226,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
     const result = await deleteRevenda(id)
 
     if (result.success) {
-      setRevendas(revendas.filter((r) => r.id !== id))
+      setRevendas((prev) => prev.filter((r) => r.id !== id))
     } else {
       alert(result.error)
     }
@@ -139,7 +235,15 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog
+          open={isCreateOpen}
+          onOpenChange={(open) => {
+            setIsCreateOpen(open)
+            if (!open) {
+              setCreateForm(INITIAL_CREATE_FORM)
+            }
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -154,28 +258,75 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="nome">Nome da Revenda *</Label>
-                  <Input id="nome" name="nome" required />
+                  <Input
+                    id="nome"
+                    name="nome"
+                    value={createForm.nome}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, nome: event.target.value }))
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="cnpj">CNPJ *</Label>
-                  <Input id="cnpj" name="cnpj" placeholder="00.000.000/0000-00" required />
+                  <Input
+                    id="cnpj"
+                    name="cnpj"
+                    placeholder="00.000.000/0000-00"
+                    value={createForm.cnpj}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, cnpj: formatCNPJ(event.target.value) }))
+                    }
+                    required
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="email">Email *</Label>
-                  <Input id="email" name="email" type="email" required />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={createForm.email}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, email: formatEmail(event.target.value) }))
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="telefone">Telefone *</Label>
-                  <Input id="telefone" name="telefone" placeholder="(00) 00000-0000" required />
+                  <Input
+                    id="telefone"
+                    name="telefone"
+                    placeholder="(00) 00000-0000"
+                    value={createForm.telefone}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, telefone: formatPhone(event.target.value) }))
+                    }
+                    required
+                  />
                 </div>
               </div>
 
               <div>
                 <Label htmlFor="dominio">Domínio *</Label>
-                <Input id="dominio" name="dominio" placeholder="minharevenda.com.br" required />
+                <Input
+                  id="dominio"
+                  name="dominio"
+                  placeholder="minharevenda.com.br"
+                  value={createForm.dominio}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, dominio: event.target.value }))
+                  }
+                  onBlur={(event) =>
+                    setCreateForm((prev) => ({ ...prev, dominio: normalizeDomain(event.target.value) }))
+                  }
+                  required
+                />
                 <p className="text-xs text-muted-foreground mt-1">Domínio personalizado para acesso white label</p>
               </div>
 
@@ -184,11 +335,30 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="username">Usuário *</Label>
-                    <Input id="username" name="username" placeholder="admin" required />
+                    <Input
+                      id="username"
+                      name="username"
+                      placeholder="admin"
+                      value={createForm.username}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({ ...prev, username: event.target.value }))
+                      }
+                      required
+                    />
                   </div>
                   <div>
                     <Label htmlFor="senha">Senha *</Label>
-                    <Input id="senha" name="senha" type="password" placeholder="••••••••" required />
+                    <Input
+                      id="senha"
+                      name="senha"
+                      type="password"
+                      placeholder="••••••••"
+                      value={createForm.senha}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({ ...prev, senha: event.target.value }))
+                      }
+                      required
+                    />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -198,7 +368,13 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
               <div>
                 <Label htmlFor="plano_id">Plano *</Label>
-                <Select name="plano_id" required>
+                <Select
+                  value={createForm.plano_id}
+                  onValueChange={(value) =>
+                    setCreateForm((prev) => ({ ...prev, plano_id: value }))
+                  }
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione um plano" />
                   </SelectTrigger>
@@ -215,22 +391,58 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="cor_primaria">Cor Primária</Label>
-                  <Input id="cor_primaria" name="cor_primaria" type="color" defaultValue="#3b82f6" />
+                  <Input
+                    id="cor_primaria"
+                    name="cor_primaria"
+                    type="color"
+                    value={createForm.cor_primaria}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, cor_primaria: event.target.value }))
+                    }
+                  />
                 </div>
                 <div>
                   <Label htmlFor="cor_secundaria">Cor Secundária</Label>
-                  <Input id="cor_secundaria" name="cor_secundaria" type="color" defaultValue="#1e40af" />
+                  <Input
+                    id="cor_secundaria"
+                    name="cor_secundaria"
+                    type="color"
+                    value={createForm.cor_secundaria}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, cor_secundaria: event.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="limite_clientes">Limite de Clientes</Label>
-                  <Input id="limite_clientes" name="limite_clientes" type="number" defaultValue={10} required />
+                  <Input
+                    id="limite_clientes"
+                    name="limite_clientes"
+                    type="number"
+                    min={0}
+                    value={createForm.limite_clientes}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, limite_clientes: event.target.value }))
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="limite_hotspots">Limite de Hotspots</Label>
-                  <Input id="limite_hotspots" name="limite_hotspots" type="number" defaultValue={5} required />
+                  <Input
+                    id="limite_hotspots"
+                    name="limite_hotspots"
+                    type="number"
+                    min={0}
+                    value={createForm.limite_hotspots}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, limite_hotspots: event.target.value }))
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="limite_usuarios_simultaneos">Usuários Simultâneos</Label>
@@ -238,7 +450,11 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="limite_usuarios_simultaneos"
                     name="limite_usuarios_simultaneos"
                     type="number"
-                    defaultValue={100}
+                    min={0}
+                    value={createForm.limite_usuarios_simultaneos}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({ ...prev, limite_usuarios_simultaneos: event.target.value }))
+                    }
                     required
                   />
                 </div>
@@ -252,32 +468,81 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
         </Dialog>
       </div>
 
-      <Dialog open={!!editingRevenda} onOpenChange={(open) => !open && setEditingRevenda(null)}>
+      <Dialog
+        open={!!editingRevenda}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingRevenda(null)
+            setEditForm(null)
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Revenda</DialogTitle>
           </DialogHeader>
-          {editingRevenda && (
+          {editingRevenda && editForm && (
             <form onSubmit={handleUpdate} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="edit-nome">Nome da Revenda *</Label>
-                  <Input id="edit-nome" name="nome" defaultValue={editingRevenda.nome} required />
+                  <Input
+                    id="edit-nome"
+                    name="nome"
+                    value={editForm.nome}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, nome: event.target.value } : prev,
+                      )
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="edit-cnpj">CNPJ *</Label>
-                  <Input id="edit-cnpj" name="cnpj" defaultValue={editingRevenda.cnpj || ""} required />
+                  <Input
+                    id="edit-cnpj"
+                    name="cnpj"
+                    value={editForm.cnpj}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, cnpj: formatCNPJ(event.target.value) } : prev,
+                      )
+                    }
+                    required
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="edit-email">Email *</Label>
-                  <Input id="edit-email" name="email" type="email" defaultValue={editingRevenda.email || ""} required />
+                  <Input
+                    id="edit-email"
+                    name="email"
+                    type="email"
+                    value={editForm.email}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, email: formatEmail(event.target.value) } : prev,
+                      )
+                    }
+                    required
+                  />
                 </div>
                 <div>
                   <Label htmlFor="edit-telefone">Telefone *</Label>
-                  <Input id="edit-telefone" name="telefone" defaultValue={editingRevenda.telefone || ""} required />
+                  <Input
+                    id="edit-telefone"
+                    name="telefone"
+                    value={editForm.telefone}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, telefone: formatPhone(event.target.value) } : prev,
+                      )
+                    }
+                    required
+                  />
                 </div>
               </div>
 
@@ -286,8 +551,18 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                 <Input
                   id="edit-dominio"
                   name="dominio"
-                  defaultValue={editingRevenda.dominio}
+                  value={editForm.dominio}
                   placeholder="minharevenda.com.br"
+                  onChange={(event) =>
+                    setEditForm((prev) =>
+                      prev ? { ...prev, dominio: event.target.value } : prev,
+                    )
+                  }
+                  onBlur={(event) =>
+                    setEditForm((prev) =>
+                      prev ? { ...prev, dominio: normalizeDomain(event.target.value) } : prev,
+                    )
+                  }
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">Domínio personalizado para acesso white label</p>
@@ -301,14 +576,31 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     <Input
                       id="edit-username"
                       name="username"
-                      defaultValue={editingRevenda.username || ""}
+                      value={editForm.username}
                       placeholder="admin"
+                      onChange={(event) =>
+                        setEditForm((prev) =>
+                          prev ? { ...prev, username: event.target.value } : prev,
+                        )
+                      }
                       required
                     />
                   </div>
                   <div>
                     <Label htmlFor="edit-senha">Senha *</Label>
-                    <Input id="edit-senha" name="senha" type="password" placeholder="••••••••" required />
+                    <Input
+                      id="edit-senha"
+                      name="senha"
+                      type="password"
+                      placeholder="••••••••"
+                      value={editForm.senha}
+                      onChange={(event) =>
+                        setEditForm((prev) =>
+                          prev ? { ...prev, senha: event.target.value } : prev,
+                        )
+                      }
+                      required
+                    />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -318,7 +610,13 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
 
               <div>
                 <Label htmlFor="edit-plano_id">Plano *</Label>
-                <Select name="plano_id" defaultValue={editingRevenda.plano_id} required>
+                <Select
+                  value={editForm.plano_id}
+                  onValueChange={(value) =>
+                    setEditForm((prev) => (prev ? { ...prev, plano_id: value } : prev))
+                  }
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione um plano" />
                   </SelectTrigger>
@@ -339,7 +637,12 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-cor_primaria"
                     name="cor_primaria"
                     type="color"
-                    defaultValue={editingRevenda.cor_primaria || "#3b82f6"}
+                    value={editForm.cor_primaria}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, cor_primaria: event.target.value } : prev,
+                      )
+                    }
                   />
                 </div>
                 <div>
@@ -348,7 +651,12 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-cor_secundaria"
                     name="cor_secundaria"
                     type="color"
-                    defaultValue={editingRevenda.cor_secundaria || "#1e40af"}
+                    value={editForm.cor_secundaria}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, cor_secundaria: event.target.value } : prev,
+                      )
+                    }
                   />
                 </div>
               </div>
@@ -360,7 +668,13 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-limite_clientes"
                     name="limite_clientes"
                     type="number"
-                    defaultValue={editingRevenda.limite_clientes}
+                    min={0}
+                    value={editForm.limite_clientes}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, limite_clientes: event.target.value } : prev,
+                      )
+                    }
                     required
                   />
                 </div>
@@ -370,7 +684,13 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-limite_hotspots"
                     name="limite_hotspots"
                     type="number"
-                    defaultValue={editingRevenda.limite_hotspots}
+                    min={0}
+                    value={editForm.limite_hotspots}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev ? { ...prev, limite_hotspots: event.target.value } : prev,
+                      )
+                    }
                     required
                   />
                 </div>
@@ -380,7 +700,15 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                     id="edit-limite_usuarios_simultaneos"
                     name="limite_usuarios_simultaneos"
                     type="number"
-                    defaultValue={editingRevenda.limite_usuarios_simultaneos || 0}
+                    min={0}
+                    value={editForm.limite_usuarios_simultaneos}
+                    onChange={(event) =>
+                      setEditForm((prev) =>
+                        prev
+                          ? { ...prev, limite_usuarios_simultaneos: event.target.value }
+                          : prev,
+                      )
+                    }
                     required
                   />
                 </div>
@@ -410,7 +738,7 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
               {revenda.cnpj && (
                 <div className="text-sm">
                   <p className="text-muted-foreground">CNPJ</p>
-                  <p className="font-medium">{revenda.cnpj}</p>
+                  <p className="font-medium">{formatCNPJ(revenda.cnpj)}</p>
                 </div>
               )}
 
@@ -422,14 +750,14 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
               {revenda.email && (
                 <div className="flex items-center gap-2 text-sm">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{revenda.email}</span>
+                  <span className="text-muted-foreground">{formatEmail(revenda.email)}</span>
                 </div>
               )}
 
               {revenda.telefone && (
                 <div className="flex items-center gap-2 text-sm">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{revenda.telefone}</span>
+                  <span className="text-muted-foreground">{formatPhone(revenda.telefone)}</span>
                 </div>
               )}
 
@@ -458,7 +786,24 @@ export function RevendasClient({ revendas: initialRevendas }: { revendas: Revend
                   variant="outline"
                   size="sm"
                   className="flex-1 bg-transparent"
-                  onClick={() => setEditingRevenda(revenda)}
+                  onClick={() => {
+                    setEditingRevenda(revenda)
+                    setEditForm({
+                      nome: revenda.nome,
+                      cnpj: formatCNPJ(revenda.cnpj || ""),
+                      email: formatEmail(revenda.email || ""),
+                      telefone: formatPhone(revenda.telefone || ""),
+                      dominio: normalizeDomain(revenda.dominio),
+                      plano_id: revenda.plano_id || "",
+                      cor_primaria: revenda.cor_primaria || "#3b82f6",
+                      cor_secundaria: revenda.cor_secundaria || "#1e40af",
+                      limite_clientes: String(revenda.limite_clientes ?? 0),
+                      limite_hotspots: String(revenda.limite_hotspots ?? 0),
+                      limite_usuarios_simultaneos: String(revenda.limite_usuarios_simultaneos ?? 0),
+                      username: revenda.username || "",
+                      senha: "",
+                    })
+                  }}
                 >
                   <Edit className="h-4 w-4 mr-1" />
                   Editar

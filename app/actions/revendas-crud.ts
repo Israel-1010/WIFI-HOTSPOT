@@ -1,7 +1,65 @@
 "use server"
 
+import { createHash } from "node:crypto"
+
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+function hashPassword(plain: string) {
+  return createHash("sha256").update(plain).digest("hex")
+}
+
+async function fetchRevendaWithExtras(supabase: SupabaseServerClient, id: string) {
+  const { data: revenda, error: revendaError } = await supabase
+    .from("revendas")
+    .select(`
+      *,
+      plano:planos(nome, preco_mensal)
+    `)
+    .eq("id", id)
+    .maybeSingle()
+
+  if (revendaError) {
+    console.error("[v0] Erro ao buscar revenda atualizada:", revendaError)
+    return null
+  }
+
+  if (!revenda) {
+    return null
+  }
+
+  const [adminUserResult, clientesCountResult] = await Promise.all([
+    supabase
+      .from("usuarios")
+      .select("username, email, telefone")
+      .eq("revenda_id", id)
+      .eq("role", "admin_revenda")
+      .maybeSingle(),
+    supabase
+      .from("usuarios")
+      .select("*", { count: "exact", head: true })
+      .eq("revenda_id", id)
+      .eq("role", "cliente"),
+  ])
+
+  if (adminUserResult.error) {
+    console.error("[v0] Erro ao buscar usuário admin da revenda:", adminUserResult.error)
+  }
+
+  if (clientesCountResult.error) {
+    console.error("[v0] Erro ao contar clientes da revenda:", clientesCountResult.error)
+  }
+
+  return {
+    ...revenda,
+    total_clientes: clientesCountResult.count || 0,
+    username: adminUserResult.data?.username ?? null,
+    email: revenda.email || adminUserResult.data?.email || null,
+    telefone: revenda.telefone || adminUserResult.data?.telefone || null,
+  }
+}
 
 export interface RevendaFormData {
   nome: string
@@ -140,12 +198,7 @@ export async function createRevenda(data: RevendaFormData) {
     return { success: false, error: error.message }
   }
 
-  // Hash da senha usando SHA-256
-  const encoder = new TextEncoder()
-  const data_senha = encoder.encode(data.senha)
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data_senha)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const senha_hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+  const senha_hash = hashPassword(data.senha)
 
   const { error: userError } = await supabase.from("usuarios").insert({
     username: data.username,
@@ -166,8 +219,10 @@ export async function createRevenda(data: RevendaFormData) {
     return { success: false, error: "Erro ao criar usuário de acesso: " + userError.message }
   }
 
+  const revendaAtualizada = await fetchRevendaWithExtras(supabase, revenda.id)
+
   revalidatePath("/admin-geral/revendas")
-  return { success: true, data: revenda }
+  return { success: true, data: revendaAtualizada ?? revenda }
 }
 
 export async function updateRevenda(id: string, data: Partial<RevendaFormData>) {
@@ -221,11 +276,7 @@ export async function updateRevenda(id: string, data: Partial<RevendaFormData>) 
       }
 
       if (senha) {
-        const encoder = new TextEncoder()
-        const data_senha = encoder.encode(senha)
-        const hashBuffer = await crypto.subtle.digest("SHA-256", data_senha)
-        const hashArray = Array.from(new Uint8Array(hashBuffer))
-        userUpdate.senha_hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+        userUpdate.senha_hash = hashPassword(senha)
       }
 
       if (Object.keys(userUpdate).length > 0) {
@@ -239,8 +290,10 @@ export async function updateRevenda(id: string, data: Partial<RevendaFormData>) 
     }
   }
 
+  const revendaAtualizada = await fetchRevendaWithExtras(supabase, id)
+
   revalidatePath("/admin-geral/revendas")
-  return { success: true }
+  return { success: true, data: revendaAtualizada }
 }
 
 export async function deleteRevenda(id: string) {
