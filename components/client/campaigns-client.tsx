@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Edit, Trash2, Play, Pause } from "lucide-react"
 import { createCampanha, updateCampanhaStatus, deleteCampanha, updateCampanha } from "@/app/actions/campanhas"
+import { useToast } from "@/hooks/use-toast"
 
 interface Campaign {
   id: string
@@ -23,7 +24,17 @@ interface Campaign {
   conversoes: number
   data_inicio?: string
   data_fim?: string
-  conteudo: any
+  descricao?: string | null
+  conteudo?: {
+    title?: string
+    description?: string
+    buttonText?: string
+    targetUrl?: string
+    mediaType?: string
+    imageUrl?: string
+    videoUrl?: string
+    html?: string
+  } | null
   created_at: string
 }
 
@@ -33,41 +44,45 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
   const [isEditing, setIsEditing] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
+  const defaultConteudo = {
+    title: "",
+    description: "",
+    buttonText: "Saiba mais",
+    targetUrl: "",
+    mediaType: "image",
+    imageUrl: "",
+    videoUrl: "",
+    html: "",
+  }
+
   const [newCampaign, setNewCampaign] = useState({
     nome: "",
     tipo: "popup",
-    conteudo: {
-      title: "",
-      description: "",
-      buttonText: "Clique aqui",
-      targetUrl: "",
-    },
+    descricao: "",
+    conteudo: { ...defaultConteudo },
   })
+
+  const resetNewCampaign = () => {
+    setNewCampaign({ nome: "", tipo: "popup", descricao: "", conteudo: { ...defaultConteudo } })
+  }
 
   const handleCreateCampaign = async () => {
     if (!newCampaign.nome || !newCampaign.conteudo.title) {
-      alert("Preencha todos os campos obrigatórios")
+      toast({ title: "Campos obrigatórios", description: "Informe nome e título da campanha.", variant: "destructive" })
       return
     }
 
     setIsSubmitting(true)
     try {
-      await createCampanha(newCampaign)
+      const created = await createCampanha(newCampaign)
+      setCampaigns((prev) => [created as Campaign, ...prev])
+      toast({ title: "Campanha criada", description: "Seu criativo já está disponível para seleção." })
+      resetNewCampaign()
       setIsCreating(false)
-      setNewCampaign({
-        nome: "",
-        tipo: "popup",
-        conteudo: {
-          title: "",
-          description: "",
-          buttonText: "Clique aqui",
-          targetUrl: "",
-        },
-      })
-      window.location.reload()
     } catch (error) {
       console.error("[v0] Error creating campaign:", error)
-      alert("Erro ao criar campanha")
+      toast({ title: "Erro ao criar campanha", description: "Tente novamente mais tarde.", variant: "destructive" })
     } finally {
       setIsSubmitting(false)
     }
@@ -78,9 +93,10 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
     try {
       await updateCampanhaStatus(id, newStatus)
       setCampaigns(campaigns.map((c) => (c.id === id ? { ...c, status: newStatus } : c)))
+      toast({ title: "Status atualizado", description: `Campanha ${newStatus === "active" ? "ativada" : "pausada"}.` })
     } catch (error) {
       console.error("[v0] Error updating campaign:", error)
-      alert("Erro ao atualizar campanha")
+      toast({ title: "Erro ao atualizar campanha", description: "Tente novamente.", variant: "destructive" })
     }
   }
 
@@ -90,14 +106,19 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
     try {
       await deleteCampanha(id)
       setCampaigns(campaigns.filter((c) => c.id !== id))
+      toast({ title: "Campanha removida" })
     } catch (error) {
       console.error("[v0] Error deleting campaign:", error)
-      alert("Erro ao excluir campanha")
+      toast({ title: "Erro ao excluir", description: "Não foi possível remover a campanha.", variant: "destructive" })
     }
   }
 
   const handleEditClick = (campaign: Campaign) => {
-    setEditingCampaign(campaign)
+    setEditingCampaign({
+      ...campaign,
+      descricao: campaign.descricao || "",
+      conteudo: { ...defaultConteudo, ...(campaign.conteudo || {}) },
+    })
     setIsEditing(true)
   }
 
@@ -110,14 +131,16 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
         nome: editingCampaign.nome,
         tipo: editingCampaign.tipo,
         conteudo: editingCampaign.conteudo,
+        descricao: editingCampaign.descricao,
       })
 
       setCampaigns(campaigns.map((c) => (c.id === editingCampaign.id ? editingCampaign : c)))
       setIsEditing(false)
       setEditingCampaign(null)
+      toast({ title: "Campanha atualizada" })
     } catch (error) {
       console.error("[v0] Error updating campaign:", error)
-      alert("Erro ao atualizar campanha")
+      toast({ title: "Erro ao atualizar", description: "Reveja os campos e tente novamente.", variant: "destructive" })
     } finally {
       setIsSubmitting(false)
     }
@@ -189,6 +212,16 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                     </Select>
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Descrição resumida</Label>
+                  <Textarea
+                    value={newCampaign.descricao}
+                    onChange={(e) => setNewCampaign({ ...newCampaign, descricao: e.target.value })}
+                    placeholder="Texto que aparece na lista de campanhas"
+                    rows={2}
+                  />
+                </div>
               </TabsContent>
 
               <TabsContent value="content" className="space-y-4">
@@ -250,11 +283,98 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Formato do criativo</Label>
+                    <Select
+                      value={newCampaign.conteudo.mediaType}
+                      onValueChange={(value) =>
+                        setNewCampaign({
+                          ...newCampaign,
+                          conteudo: { ...newCampaign.conteudo, mediaType: value },
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="image">Imagem (URL)</SelectItem>
+                        <SelectItem value="video">Vídeo (MP4)</SelectItem>
+                        <SelectItem value="html">HTML/Embed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    {newCampaign.conteudo.mediaType === "image" && (
+                      <>
+                        <Label>URL da imagem</Label>
+                        <Input
+                          value={newCampaign.conteudo.imageUrl}
+                          onChange={(e) =>
+                            setNewCampaign({
+                              ...newCampaign,
+                              conteudo: { ...newCampaign.conteudo, imageUrl: e.target.value },
+                            })
+                          }
+                          placeholder="https://cdn.meusite.com/banner.jpg"
+                        />
+                      </>
+                    )}
+
+                    {newCampaign.conteudo.mediaType === "video" && (
+                      <>
+                        <Label>URL do vídeo</Label>
+                        <Input
+                          value={newCampaign.conteudo.videoUrl}
+                          onChange={(e) =>
+                            setNewCampaign({
+                              ...newCampaign,
+                              conteudo: { ...newCampaign.conteudo, videoUrl: e.target.value },
+                            })
+                          }
+                          placeholder="https://cdn.meusite.com/video.mp4"
+                        />
+                      </>
+                    )}
+
+                    {newCampaign.conteudo.mediaType === "html" && (
+                      <>
+                        <Label>Código HTML</Label>
+                        <Textarea
+                          value={newCampaign.conteudo.html}
+                          onChange={(e) =>
+                            setNewCampaign({
+                              ...newCampaign,
+                              conteudo: { ...newCampaign.conteudo, html: e.target.value },
+                            })
+                          }
+                          rows={4}
+                          placeholder="<div>Conteúdo customizado</div>"
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="preview" className="space-y-4">
                 <div className="border rounded-lg p-6 bg-gray-50">
                   <h3 className="font-semibold mb-4">Preview da Campanha</h3>
+
+                  {newCampaign.conteudo.mediaType === "image" && newCampaign.conteudo.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={newCampaign.conteudo.imageUrl}
+                      alt="Prévia da campanha"
+                      className="w-full h-48 object-cover rounded-md mb-4"
+                    />
+                  )}
+                  {newCampaign.conteudo.mediaType === "video" && newCampaign.conteudo.videoUrl && (
+                    <video src={newCampaign.conteudo.videoUrl} className="w-full h-48 rounded-md mb-4" controls muted />
+                  )}
 
                   {newCampaign.tipo === "popup" && (
                     <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm mx-auto">
@@ -329,6 +449,15 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                     </Select>
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Descrição resumida</Label>
+                  <Textarea
+                    value={editingCampaign.descricao || ""}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, descricao: e.target.value })}
+                    rows={2}
+                  />
+                </div>
               </TabsContent>
 
               <TabsContent value="content" className="space-y-4">
@@ -390,11 +519,91 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Formato do criativo</Label>
+                    <Select
+                      value={editingCampaign.conteudo?.mediaType || "image"}
+                      onValueChange={(value) =>
+                        setEditingCampaign({
+                          ...editingCampaign,
+                          conteudo: { ...editingCampaign.conteudo, mediaType: value },
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="image">Imagem (URL)</SelectItem>
+                        <SelectItem value="video">Vídeo (MP4)</SelectItem>
+                        <SelectItem value="html">HTML/Embed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    {editingCampaign.conteudo?.mediaType === "video" ? (
+                      <>
+                        <Label>URL do vídeo</Label>
+                        <Input
+                          value={editingCampaign.conteudo?.videoUrl || ""}
+                          onChange={(e) =>
+                            setEditingCampaign({
+                              ...editingCampaign,
+                              conteudo: { ...editingCampaign.conteudo, videoUrl: e.target.value },
+                            })
+                          }
+                        />
+                      </>
+                    ) : editingCampaign.conteudo?.mediaType === "html" ? (
+                      <>
+                        <Label>Código HTML</Label>
+                        <Textarea
+                          value={editingCampaign.conteudo?.html || ""}
+                          onChange={(e) =>
+                            setEditingCampaign({
+                              ...editingCampaign,
+                              conteudo: { ...editingCampaign.conteudo, html: e.target.value },
+                            })
+                          }
+                          rows={4}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Label>URL da imagem</Label>
+                        <Input
+                          value={editingCampaign.conteudo?.imageUrl || ""}
+                          onChange={(e) =>
+                            setEditingCampaign({
+                              ...editingCampaign,
+                              conteudo: { ...editingCampaign.conteudo, imageUrl: e.target.value },
+                            })
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="preview" className="space-y-4">
                 <div className="border rounded-lg p-6 bg-gray-50">
                   <h3 className="font-semibold mb-4">Preview da Campanha</h3>
+
+                  {editingCampaign.conteudo?.mediaType === "image" && editingCampaign.conteudo?.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={editingCampaign.conteudo.imageUrl}
+                      alt="Prévia da campanha"
+                      className="w-full h-48 object-cover rounded-md mb-4"
+                    />
+                  )}
+                  {editingCampaign.conteudo?.mediaType === "video" && editingCampaign.conteudo?.videoUrl && (
+                    <video src={editingCampaign.conteudo.videoUrl} className="w-full h-48 rounded-md mb-4" controls muted />
+                  )}
 
                   {editingCampaign.tipo === "popup" && (
                     <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm mx-auto">
@@ -434,29 +643,60 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
       </Dialog>
 
       <div className="grid gap-4">
-        {campaigns.map((campaign) => (
-          <Card key={campaign.id}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="text-2xl">{getCampaignIcon(campaign.tipo)}</div>
-                  <div>
-                    <div className="flex items-center space-x-2 mb-1">
-                      <h3 className="text-lg font-semibold">{campaign.nome}</h3>
-                      <Badge
-                        variant={
-                          campaign.status === "active"
-                            ? "default"
-                            : campaign.status === "paused"
-                              ? "secondary"
-                              : "outline"
-                        }
-                      >
-                        {campaign.status === "active" ? "Ativa" : campaign.status === "paused" ? "Pausada" : "Rascunho"}
-                      </Badge>
-                      <Badge variant="outline">{campaign.tipo}</Badge>
+        {campaigns.map((campaign) => {
+          const mediaType = campaign.conteudo?.mediaType
+          const hasImage = mediaType === "image" && campaign.conteudo?.imageUrl
+          const hasVideo = mediaType === "video" && campaign.conteudo?.videoUrl
+          return (
+            <Card key={campaign.id}>
+              <CardContent className="p-6 space-y-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="h-20 w-20 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                      {hasImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={campaign.conteudo?.imageUrl} alt="thumb" className="h-full w-full object-cover" />
+                      ) : hasVideo ? (
+                        <video src={campaign.conteudo?.videoUrl} className="h-full w-full object-cover" muted loop />
+                      ) : (
+                        <span className="text-2xl">{getCampaignIcon(campaign.tipo)}</span>
+                      )}
                     </div>
-                    <p className="text-gray-600">{campaign.conteudo?.title}</p>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h3 className="text-lg font-semibold">{campaign.nome}</h3>
+                        <Badge
+                          variant={
+                            campaign.status === "active"
+                              ? "default"
+                              : campaign.status === "paused"
+                                ? "secondary"
+                                : "outline"
+                          }
+                        >
+                          {campaign.status === "active" ? "Ativa" : campaign.status === "paused" ? "Pausada" : "Rascunho"}
+                        </Badge>
+                        <Badge variant="outline">{campaign.tipo}</Badge>
+                      </div>
+                      <p className="text-sm text-gray-600 line-clamp-2">
+                        {campaign.descricao || campaign.conteudo?.description || "Sem descrição"}
+                      </p>
+                      {campaign.conteudo?.targetUrl && (
+                        <p className="text-xs text-muted-foreground mt-1">{campaign.conteudo.targetUrl}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Button variant="outline" size="sm" onClick={() => handleToggleStatus(campaign.id, campaign.status)}>
+                      {campaign.status === "active" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleEditClick(campaign)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDelete(campaign.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
 
@@ -474,22 +714,10 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                     <p className="text-xl font-bold">{campaign.conversoes}</p>
                   </div>
                 </div>
-
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => handleToggleStatus(campaign.id, campaign.status)}>
-                    {campaign.status === "active" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleEditClick(campaign)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleDelete(campaign.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          )
+        })}
 
         {campaigns.length === 0 && (
           <Card>

@@ -3,12 +3,73 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 
-export async function getCampanhas() {
+type CampanhaRegistro = {
+  id: string
+  nome: string
+  tipo: string
+  status: string
+  conteudo: Record<string, any> | null
+  descricao?: string | null
+  criado_por?: string | null
+  cliente_id?: string | null
+  criado_em?: string
+}
+
+function isMissingClienteColumn(error: { message?: string } | null) {
+  if (!error?.message) return false
+  return error.message.includes("cliente") || error.message.includes("column")
+}
+
+export async function getCampanhas({ includeAll = false }: { includeAll?: boolean } = {}) {
   const supabase = await createClient()
-  const { data, error } = await supabase.from("campanhas").select("*").order("criado_em", { ascending: false })
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  let query = supabase.from("campanhas").select("*").order("criado_em", { ascending: false })
+
+  if (!includeAll && user?.id) {
+    query = query.eq("criado_por", user.id)
+  }
+
+  const { data, error } = await query
 
   if (error) throw error
-  return data
+  return (data as CampanhaRegistro[]) || []
+}
+
+export async function getCampanhasDoCliente(clienteId: string) {
+  const supabase = await createClient()
+
+  let { data, error } = await supabase
+    .from("campanhas")
+    .select("*")
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+
+  if (error && isMissingClienteColumn(error)) {
+    console.warn("[v0] Campo cliente_id ausente em campanhas. Aplicando fallback por criado_por.")
+    error = null
+  }
+
+  if (error || !data || data.length === 0) {
+    const fallback = await supabase
+      .from("campanhas")
+      .select("*")
+      .eq("criado_por", clienteId)
+      .order("criado_em", { ascending: false })
+
+    data = fallback.data
+    error = fallback.error
+  }
+
+  if (error) {
+    console.error("[v0] Erro ao carregar campanhas do cliente:", error)
+    return []
+  }
+
+  return (data as CampanhaRegistro[]) || []
 }
 
 export async function createCampanha(campanha: any) {

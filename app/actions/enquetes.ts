@@ -30,6 +30,67 @@ export async function getEnquetes() {
   return enquetes
 }
 
+export async function getEnquetesDoCliente(clienteId: string) {
+  const supabase = await createClient()
+
+  let { data, error } = await supabase
+    .from("enquetes")
+    .select(
+      `
+      *,
+      questoes:questoes_enquetes(*)
+    `,
+    )
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+
+  if (error && error.message?.includes("cliente")) {
+    console.warn("[v0] Campo cliente_id não encontrado em enquetes. Usando fallback por criado_por.")
+    error = null
+  }
+
+  if (error || !data || data.length === 0) {
+    const fallback = await supabase
+      .from("enquetes")
+      .select(
+        `
+        *,
+        questoes:questoes_enquetes(*)
+      `,
+      )
+      .eq("criado_por", clienteId)
+      .order("criado_em", { ascending: false })
+
+    data = fallback.data
+    error = fallback.error
+  }
+
+  if (error) {
+    console.error("[v0] Erro ao carregar enquetes do cliente:", error)
+    return []
+  }
+
+  return (
+    (data || []).map((enquete) => ({
+      ...enquete,
+      questoes: (enquete.questoes || []).map((questao: any) => ({
+        ...questao,
+        opcoes:
+          typeof questao.opcoes === "string"
+            ? (() => {
+                try {
+                  return JSON.parse(questao.opcoes)
+                } catch (err) {
+                  console.warn("[v0] Falha ao converter opções da enquete", err)
+                  return []
+                }
+              })()
+            : questao.opcoes,
+      })),
+    })) || []
+  )
+}
+
 export async function createEnquete(formData: {
   titulo: string
   descricao: string

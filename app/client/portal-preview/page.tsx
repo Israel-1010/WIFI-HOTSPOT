@@ -2,6 +2,8 @@ import { getConfiguracaoPortal, getProvidersOAuth } from "@/app/actions/portal-h
 import { PortalPreviewClient } from "@/components/client/portal-preview-client"
 import { getSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { getCampanhasDoCliente } from "@/app/actions/campanhas"
+import { getEnquetesDoCliente } from "@/app/actions/enquetes"
 
 export default async function PortalPreviewPage() {
   const session = await getSession()
@@ -12,9 +14,6 @@ export default async function PortalPreviewPage() {
 
   const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
 
-  console.log("[v0] Portal Preview - Session user:", session.user)
-  console.log("[v0] Portal Preview - Cliente ID determinado:", clienteId)
-
   if (!clienteId) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -23,12 +22,20 @@ export default async function PortalPreviewPage() {
     )
   }
 
-  const configuracao = await getConfiguracaoPortal(clienteId)
-  const providers = await getProvidersOAuth()
+  const [configuracao, providers, campanhas, enquetes] = await Promise.all([
+    getConfiguracaoPortal(clienteId),
+    getProvidersOAuth(),
+    getCampanhasDoCliente(clienteId),
+    getEnquetesDoCliente(clienteId),
+  ])
 
-  console.log("[v0] Portal Preview - Configuração carregada:", configuracao)
-  console.log("[v0] Portal Preview - Providers carregados:", providers)
-  console.log("[v0] Portal Preview - Quantidade de providers:", providers?.length || 0)
-
-  return <PortalPreviewClient clienteId={clienteId} configuracaoInicial={configuracao} providersInicial={providers} />
+  return (
+    <PortalPreviewClient
+      clienteId={clienteId}
+      configuracaoInicial={configuracao}
+      providersInicial={providers}
+      campanhasDisponiveis={campanhas}
+      enquetesDisponiveis={enquetes}
+    />
+  )
 }

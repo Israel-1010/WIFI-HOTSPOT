@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Monitor,
   Tablet,
@@ -17,13 +18,15 @@ import {
   ExternalLink,
   Save,
   Info,
-  RefreshCw,
   Mail,
   Ticket,
+  Sparkles,
+  ListChecks,
 } from "lucide-react"
 import { PortalHotspotClient } from "@/components/hotspot/portal-hotspot-client"
 import { updateConfiguracaoPortal } from "@/app/actions/portal-hotspot"
 import { useToast } from "@/hooks/use-toast"
+import Link from "next/link"
 
 export type FluxoAutenticacao = "multi" | "single"
 export type MetodoPreferido = "social" | "email" | "voucher"
@@ -57,18 +60,51 @@ interface Provider {
   ativo: boolean
 }
 
+interface CampanhaConteudo {
+  title?: string
+  description?: string
+  buttonText?: string
+  buttonUrl?: string
+  imageUrl?: string
+  videoUrl?: string
+  html?: string
+  mediaType?: string
+  exibirNoPortal?: boolean
+}
+
 interface Campanha {
   id: string
-  tipo: "anuncio" | "enquete" | "video"
+  tipo: string
+  titulo?: string
+  nome?: string
+  descricao?: string | null
+  url?: string | null
+  ativo?: boolean
+  status?: string
+  conteudo?: CampanhaConteudo | null
+}
+
+interface EnqueteQuestao {
+  id: string
+  pergunta: string
+  tipo: string
+  opcoes?: string[] | null
+}
+
+interface Enquete {
+  id: string
   titulo: string
-  url?: string
-  ativo: boolean
+  descricao?: string | null
+  status: string
+  questoes?: EnqueteQuestao[]
 }
 
 interface PortalPreviewClientProps {
   clienteId: string
   configuracaoInicial: ConfiguracaoPortal | null
   providersInicial: Provider[]
+  campanhasDisponiveis?: Campanha[] | null
+  enquetesDisponiveis?: Enquete[] | null
 }
 
 /** ErrorBoundary simples para segurar erros de render no preview */
@@ -91,7 +127,13 @@ class ErrorBoundary extends (require("react").Component as any) {
   }
 }
 
-export function PortalPreviewClient({ clienteId, configuracaoInicial, providersInicial }: PortalPreviewClientProps) {
+export function PortalPreviewClient({
+  clienteId,
+  configuracaoInicial,
+  providersInicial,
+  campanhasDisponiveis = [],
+  enquetesDisponiveis = [],
+}: PortalPreviewClientProps) {
   const { toast } = useToast()
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("mobile")
   const [saving, setSaving] = useState(false)
@@ -119,11 +161,62 @@ export function PortalPreviewClient({ clienteId, configuracaoInicial, providersI
 
   const [providers, setProviders] = useState<Provider[]>(providersInicial)
 
-  // Campanhas só leitura (puxadas da base)
-  const [campanhas, setCampanhas] = useState<Campanha[] | null>(null)
-  const [loadingCampanhas, setLoadingCampanhas] = useState(false)
+  const [campanhasSelecionadas, setCampanhasSelecionadas] = useState<string[]>(() => {
+    if (!campanhasDisponiveis?.length) return []
+    return campanhasDisponiveis
+      .filter((camp) => {
+        if (typeof camp.conteudo?.exibirNoPortal === "boolean") {
+          return camp.conteudo.exibirNoPortal
+        }
+        if (typeof camp.ativo === "boolean") return camp.ativo
+        if (camp.status) {
+          const normalized = camp.status.toLowerCase()
+          return normalized === "ativa" || normalized === "active"
+        }
+        return true
+      })
+      .map((camp) => camp.id)
+  })
+
+  const [enquetesSelecionadas, setEnquetesSelecionadas] = useState<string[]>(() => {
+    if (!enquetesDisponiveis?.length) return []
+    return enquetesDisponiveis
+      .filter((enquete) => {
+        if (!enquete.status) return true
+        const normalized = enquete.status.toLowerCase()
+        return normalized === "ativa" || normalized === "active" || normalized === "agendada"
+      })
+      .map((enquete) => enquete.id)
+  })
 
   const activeProviders = useMemo(() => providers.filter((p) => p.ativo), [providers])
+
+  const campanhasParaPreview = useMemo(
+    () => (campanhasDisponiveis || []).filter((camp) => campanhasSelecionadas.includes(camp.id)),
+    [campanhasDisponiveis, campanhasSelecionadas],
+  )
+
+  const enquetesParaPreview = useMemo(
+    () => (enquetesDisponiveis || []).filter((enquete) => enquetesSelecionadas.includes(enquete.id)),
+    [enquetesDisponiveis, enquetesSelecionadas],
+  )
+
+  const totalCampanhasDisponiveis = campanhasDisponiveis?.length || 0
+  const totalEnquetesDisponiveis = enquetesDisponiveis?.length || 0
+
+  const toggleCampanhaSelecionada = (campanhaId: string) => {
+    setCampanhasSelecionadas((prev) =>
+      prev.includes(campanhaId) ? prev.filter((value) => value !== campanhaId) : [...prev, campanhaId],
+    )
+  }
+
+  const toggleEnqueteSelecionada = (enqueteId: string) => {
+    setEnquetesSelecionadas((prev) =>
+      prev.includes(enqueteId) ? prev.filter((value) => value !== enqueteId) : [...prev, enqueteId],
+    )
+  }
+
+  const nomeCampanha = (camp: Campanha) => camp.nome || camp.titulo || "Campanha sem título"
 
   const deviceDimensions = {
     desktop: { width: "1200px", height: "800px", scale: 0.6 },
@@ -260,34 +353,8 @@ export function PortalPreviewClient({ clienteId, configuracaoInicial, providersI
     )
   }
 
-  // ===== Campanhas (fetch on demand) =====
-  const fetchCampanhas = async () => {
-    try {
-      setLoadingCampanhas(true)
-      const res = await fetch(`/api/campanhas?clienteId=${clienteId}`)
-      if (!res.ok) throw new Error("Falha ao carregar campanhas")
-      const data: Campanha[] = await res.json()
-      setCampanhas(data)
-      toast({ title: "Campanhas", description: `${data.length} campanha(s) carregadas.` })
-    } catch (e: any) {
-      toast({
-        title: "Erro ao carregar",
-        description: e?.message || "Não foi possível puxar as campanhas.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingCampanhas(false)
-    }
-  }
-
   // Tabs controladas para side-effects
   const [tabValue, setTabValue] = useState<string>("aparencia")
-  useEffect(() => {
-    if (tabValue === "campanhas" && campanhas === null && !loadingCampanhas) {
-      void fetchCampanhas()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabValue])
 
   const validateBeforeSave = (): string | null => {
     if (config.slideshow_ativo && (!config.slideshow_tempo_minimo || config.slideshow_tempo_minimo < 5)) {
@@ -349,11 +416,12 @@ export function PortalPreviewClient({ clienteId, configuracaoInicial, providersI
           </div>
 
           <Tabs value={tabValue} onValueChange={setTabValue} className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="aparencia">Aparência</TabsTrigger>
               <TabsTrigger value="slideshow">Slideshow</TabsTrigger>
               <TabsTrigger value="autenticacao">Auth</TabsTrigger>
               <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
+              <TabsTrigger value="enquetes">Enquetes</TabsTrigger>
             </TabsList>
 
             {/* Aparência */}
@@ -625,76 +693,157 @@ export function PortalPreviewClient({ clienteId, configuracaoInicial, providersI
               </div>
             </TabsContent>
 
-            {/* Campanhas (somente leitura) */}
+            {/* Campanhas */}
             <TabsContent value="campanhas" className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
-                  <h3 className="text-base font-semibold">Campanhas do banco</h3>
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" /> Biblioteca de campanhas
+                  </h3>
                   <p className="text-xs text-muted-foreground">
-                    Esta tela apenas <strong>puxa</strong> as campanhas já cadastradas.
+                    Escolha quais criativos aparecem no portal antes do usuário se conectar.
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={fetchCampanhas} disabled={loadingCampanhas}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingCampanhas ? "animate-spin" : ""}`} /> Recarregar
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/client/campaigns" className="inline-flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" /> Gerenciar campanhas
+                  </Link>
                 </Button>
               </div>
 
-              {/* Contadores */}
-              {campanhas && (
-                <div className="flex flex-wrap gap-2">
-                  <Chip>Ativas: {campanhas.filter((c) => c.ativo).length}</Chip>
-                  <Chip active={false}>Inativas: {campanhas.filter((c) => !c.ativo).length}</Chip>
-                  <Chip>Total: {campanhas.length}</Chip>
+              {totalCampanhasDisponiveis > 0 ? (
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <Chip>Selecionadas: {campanhasParaPreview.length}</Chip>
+                  <Chip active={false}>Disponíveis: {totalCampanhasDisponiveis}</Chip>
                 </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma campanha cadastrada. Crie uma campanha e ela aparecerá automaticamente aqui.
+                </p>
               )}
 
-              {/* Grid de cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
-                {loadingCampanhas &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="h-32 rounded-md bg-muted animate-pulse" />
-                  ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {campanhasDisponiveis?.map((camp) => {
+                  const selecionada = campanhasSelecionadas.includes(camp.id)
+                  const mediaType = camp.conteudo?.mediaType || (camp.conteudo?.videoUrl ? "video" : "image")
+                  const temImagem = mediaType === "image" && camp.conteudo?.imageUrl
+                  const temVideo = mediaType === "video" && camp.conteudo?.videoUrl
+                  const descricaoCampanha = camp.conteudo?.description || camp.descricao || "Sem descrição"
 
-                {!loadingCampanhas && (!campanhas || campanhas.length === 0) && (
-                  <p className="text-sm text-muted-foreground">Nenhuma campanha encontrada para este cliente.</p>
-                )}
-
-                {!loadingCampanhas &&
-                  campanhas &&
-                  campanhas.map((camp) => {
-                    const isImage = camp.url?.match(/\.(png|jpe?g|gif|webp)$/i)
-                    return (
-                      <Card key={camp.id} className="overflow-hidden">
-                        <div className="flex">
-                          {isImage ? (
+                  return (
+                    <Card key={camp.id} className={`relative overflow-hidden ${selecionada ? "border-primary" : ""}`}>
+                      <div className="absolute right-3 top-3 rounded-full bg-white/80 p-1 shadow">
+                        <Checkbox
+                          checked={selecionada}
+                          onCheckedChange={() => toggleCampanhaSelecionada(camp.id)}
+                          aria-label={`Selecionar campanha ${nomeCampanha(camp)}`}
+                        />
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div className="relative h-32 rounded-md bg-muted flex items-center justify-center overflow-hidden">
+                          {temImagem && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={camp.url} alt={camp.titulo} className="w-28 h-28 object-cover" />
-                          ) : (
-                            <div className="w-28 h-28 bg-muted flex items-center justify-center text-xs text-muted-foreground">
-                              sem preview
+                            <img src={camp.conteudo?.imageUrl || ""} alt={nomeCampanha(camp)} className="h-full w-full object-cover" />
+                          )}
+                          {temVideo && (
+                            <video src={camp.conteudo?.videoUrl} className="h-full w-full object-cover" muted autoPlay loop playsInline />
+                          )}
+                          {!temImagem && !temVideo && (
+                            <div className="flex flex-col items-center text-xs text-muted-foreground">
+                              <Sparkles className="h-5 w-5 mb-1" />
+                              Sem prévia visual
                             </div>
                           )}
-                          <div className="p-3 flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs uppercase tracking-wide text-muted-foreground">{camp.tipo}</span>
-                              <Chip active={camp.ativo}>{camp.ativo ? "Ativa" : "Inativa"}</Chip>
-                            </div>
-                            <div className="font-medium text-sm truncate" title={camp.titulo}>
-                              {camp.titulo}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate" title={camp.url || "—"}>
-                              {camp.url || "—"}
-                            </div>
-                          </div>
                         </div>
-                      </Card>
-                    )
-                  })}
+                        <div>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground uppercase tracking-wide">
+                            <span>{camp.tipo}</span>
+                            <span>{camp.status || (camp.ativo ? "ativa" : "rascunho")}</span>
+                          </div>
+                          <p className="font-medium text-sm truncate" title={nomeCampanha(camp)}>
+                            {nomeCampanha(camp)}
+                          </p>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{descricaoCampanha}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })}
               </div>
 
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Info className="h-3 w-3" />
-                Se o Slideshow estiver ativo, as campanhas podem travar o botão "Conectar" pelo tempo configurado.
+                Campanhas selecionadas são enviadas para o preview e para o portal público automaticamente.
+              </p>
+            </TabsContent>
+
+            {/* Enquetes */}
+            <TabsContent value="enquetes" className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <ListChecks className="h-4 w-4 text-primary" /> Engaje com enquetes
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Ative as pesquisas que os visitantes verão antes ou depois do login.
+                  </p>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/client/surveys" className="inline-flex items-center gap-2">
+                    <ListChecks className="h-4 w-4" /> Gerenciar enquetes
+                  </Link>
+                </Button>
+              </div>
+
+              {totalEnquetesDisponiveis > 0 ? (
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <Chip>Selecionadas: {enquetesParaPreview.length}</Chip>
+                  <Chip active={false}>Disponíveis: {totalEnquetesDisponiveis}</Chip>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhuma enquete criada ainda.</p>
+              )}
+
+              <div className="space-y-3">
+                {enquetesDisponiveis?.map((enquete) => {
+                  const selecionada = enquetesSelecionadas.includes(enquete.id)
+                  return (
+                    <Card key={enquete.id} className={`p-4 ${selecionada ? "border-primary" : ""}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold">{enquete.titulo}</p>
+                          <p className="text-xs text-muted-foreground">{enquete.descricao || "Sem descrição"}</p>
+                        </div>
+                        <Checkbox
+                          checked={selecionada}
+                          onCheckedChange={() => toggleEnqueteSelecionada(enquete.id)}
+                          aria-label={`Selecionar enquete ${enquete.titulo}`}
+                        />
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {(enquete.questoes || []).slice(0, 2).map((questao) => (
+                          <div key={questao.id} className="text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">{questao.pergunta}</span>
+                            {questao.opcoes && questao.opcoes.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {questao.opcoes.map((opcao) => (
+                                  <span key={opcao} className="rounded-full border px-2 py-0.5 text-[10px]">
+                                    {opcao}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Lembre-se de configurar as perguntas obrigatórias e consentimentos antes de publicar.
               </p>
             </TabsContent>
           </Tabs>
@@ -740,7 +889,13 @@ export function PortalPreviewClient({ clienteId, configuracaoInicial, providersI
             >
               <ErrorBoundary>
                 {/* Observação: PortalHotspotClient pode (ou não) usar os novos campos. */}
-                <PortalHotspotClient configuracao={config} providers={activeProviders} clienteId={clienteId} />
+                <PortalHotspotClient
+                  configuracao={config}
+                  providers={activeProviders}
+                  clienteId={clienteId}
+                  campanhas={campanhasParaPreview}
+                  enquetes={enquetesParaPreview}
+                />
               </ErrorBoundary>
             </div>
           </div>
