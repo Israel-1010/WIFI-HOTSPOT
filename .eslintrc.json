@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/eslintrc",
+  "root": true,
+  "extends": ["next/core-web-vitals"],
+  "ignorePatterns": ["node_modules", "*.config.js"],
+  "rules": {
+    "@next/next/no-html-link-for-pages": "off"
+  }
+}

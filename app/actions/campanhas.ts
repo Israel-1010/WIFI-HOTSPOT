@@ -87,28 +87,36 @@ async function updateWithFallback(
 export async function getCampanhas({ includeAll = false }: { includeAll?: boolean } = {}) {
   const supabase = await createClient()
   const session = await getSession()
-  const perfilResolution = session?.user ? await resolvePerfilIdForUser(supabase, session.user) : { perfilId: null, candidateIds: [] }
-  const filterIds = perfilResolution.candidateIds
 
-  const buildQuery = (columns: { createdBy: string; createdAt: string }) => {
-    let query = supabase.from("campanhas").select("*").order(columns.createdAt, { ascending: false })
-    if (!includeAll && filterIds.length > 0) {
-      query =
-        filterIds.length === 1
-          ? query.eq(columns.createdBy, filterIds[0])
-          : query.in(columns.createdBy, filterIds)
+  try {
+    const perfilResolution = session?.user
+      ? await resolvePerfilIdForUser(supabase, session.user)
+      : { perfilId: null, candidateIds: [] }
+    const filterIds = perfilResolution.candidateIds
+
+    const buildQuery = (columns: { createdBy: string; createdAt: string }) => {
+      let query = supabase.from("campanhas").select("*").order(columns.createdAt, { ascending: false })
+      if (!includeAll && filterIds.length > 0) {
+        query =
+          filterIds.length === 1
+            ? query.eq(columns.createdBy, filterIds[0])
+            : query.in(columns.createdBy, filterIds)
+      }
+      return query
     }
-    return query
+
+    let { data, error } = await buildQuery({ createdBy: "criado_por", createdAt: "criado_em" })
+
+    if (error && isColumnError(error)) {
+      ;({ data, error } = await buildQuery({ createdBy: "created_by", createdAt: "created_at" }))
+    }
+
+    if (error) throw error
+    return (data || []).map((row) => normalizeCampanha(row))
+  } catch (error) {
+    console.error("[v0] Falha ao buscar campanhas:", error)
+    return []
   }
-
-  let { data, error } = await buildQuery({ createdBy: "criado_por", createdAt: "criado_em" })
-
-  if (error && isColumnError(error)) {
-    ;({ data, error } = await buildQuery({ createdBy: "created_by", createdAt: "created_at" }))
-  }
-
-  if (error) throw error
-  return (data || []).map((row) => normalizeCampanha(row))
 }
 
 export async function getCampanhasDoCliente(clienteId: string) {
