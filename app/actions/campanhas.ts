@@ -21,7 +21,8 @@ type CampanhaRegistro = {
 
 function isMissingClienteColumn(error: { message?: string } | null) {
   if (!error?.message) return false
-  return error.message.includes("cliente") || error.message.includes("column")
+  const normalized = error.message.toLowerCase()
+  return normalized.includes("cliente_id") || normalized.includes("client_id")
 }
 
 function isColumnError(error: { message?: string } | null) {
@@ -65,20 +66,6 @@ function normalizeCampanha(row: Record<string, any>): CampanhaRegistro {
 
 function sanitizePayload(payload: Record<string, any>) {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined))
-}
-
-async function insertWithFallback(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  payloads: Record<string, any>[],
-) {
-  let lastError: any = null
-  for (const payload of payloads) {
-    const { data, error } = await supabase.from("campanhas").insert(payload).select().single()
-    if (!error) return { data, error }
-    lastError = error
-    if (!isColumnError(error)) return { data, error }
-  }
-  return { data: null, error: lastError }
 }
 
 async function updateWithFallback(
@@ -174,46 +161,55 @@ export async function createCampanha(campanha: any) {
     criado_por: session.user.id,
   }
 
-  const payloads: Record<string, any>[] = []
-
-  const portuguesePayload: Record<string, any> = {
-    ...basePayload,
+  const portuguesePayload: Record<string, any> = sanitizePayload({
+    nome: basePayload.nome,
+    tipo: basePayload.tipo,
+    conteudo: basePayload.conteudo,
+    descricao: basePayload.descricao,
+    data_inicio: basePayload.data_inicio,
+    data_fim: basePayload.data_fim,
+    status: basePayload.status,
+    criado_por: basePayload.criado_por,
     cliente_id: clienteId,
     criado_em: new Date().toISOString(),
     visualizacoes: 0,
     cliques: 0,
     conversoes: 0,
+  })
+
+  const attemptInsert = async (payload: Record<string, any>) => {
+    return supabase.from("campanhas").insert(payload).select().single()
   }
 
-  payloads.push(sanitizePayload(portuguesePayload))
+  let { data, error } = await attemptInsert(portuguesePayload)
 
-  const englishPayload: Record<string, any> = {
-    name: basePayload.nome,
-    type: basePayload.tipo,
-    description: basePayload.descricao,
-    modal_position: basePayload.posicao_modal,
-    start_date: basePayload.data_inicio,
-    end_date: basePayload.data_fim,
-    status: statusToDb[basePayload.status] || basePayload.status,
-    content: basePayload.conteudo,
-    created_by: basePayload.criado_por,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    client_id: clienteId,
+  if (error && isMissingClienteColumn(error) && "cliente_id" in portuguesePayload) {
+    console.warn("[v0] Campo cliente_id ausente em campanhas. Recriando registro sem o campo.")
+    const { cliente_id: _ignored, ...rest } = portuguesePayload
+    const retry = await attemptInsert(rest)
+    data = retry.data
+    error = retry.error
   }
 
-  payloads.push(sanitizePayload(englishPayload))
+  if (error && isColumnError(error)) {
+    const englishPayload: Record<string, any> = sanitizePayload({
+      name: basePayload.nome,
+      type: basePayload.tipo,
+      description: basePayload.descricao,
+      modal_position: basePayload.posicao_modal,
+      start_date: basePayload.data_inicio,
+      end_date: basePayload.data_fim,
+      status: statusToDb[basePayload.status] || basePayload.status,
+      content: basePayload.conteudo,
+      created_by: basePayload.criado_por,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      client_id: clienteId,
+    })
 
-  let { data, error } = await insertWithFallback(supabase, payloads)
-
-  if (!data || error) {
-    if (error) {
-      if (isMissingClienteColumn(error) && "cliente_id" in portuguesePayload) {
-        console.warn("[v0] Campo cliente_id ausente em campanhas. Recriando registro sem o campo.")
-        const { cliente_id: _ignored, ...rest } = portuguesePayload
-        ;({ data, error } = await insertWithFallback(supabase, [sanitizePayload(rest), sanitizePayload({ ...englishPayload, client_id: undefined })]))
-      }
-    }
+    const fallbackInsert = await attemptInsert(englishPayload)
+    data = fallbackInsert.data
+    error = fallbackInsert.error
   }
 
   if (error || !data) {
@@ -279,7 +275,13 @@ export async function updateCampanha(
 
   const now = new Date().toISOString()
   const portuguesePayload = sanitizePayload({
-    ...formData,
+    nome: formData.nome,
+    tipo: formData.tipo,
+    conteudo: formData.conteudo,
+    descricao: formData.descricao,
+    data_inicio: formData.data_inicio,
+    data_fim: formData.data_fim,
+    status: formData.status,
     atualizado_em: now,
   })
 
