@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth"
+import { resolvePerfilIdForUser } from "@/lib/perfis"
 
 type CampanhaRegistro = {
   id: string
@@ -86,11 +87,16 @@ async function updateWithFallback(
 export async function getCampanhas({ includeAll = false }: { includeAll?: boolean } = {}) {
   const supabase = await createClient()
   const session = await getSession()
+  const perfilResolution = session?.user ? await resolvePerfilIdForUser(supabase, session.user) : { perfilId: null, candidateIds: [] }
+  const filterIds = perfilResolution.candidateIds
 
   const buildQuery = (columns: { createdBy: string; createdAt: string }) => {
     let query = supabase.from("campanhas").select("*").order(columns.createdAt, { ascending: false })
-    if (!includeAll && session?.user?.id) {
-      query = query.eq(columns.createdBy, session.user.id)
+    if (!includeAll && filterIds.length > 0) {
+      query =
+        filterIds.length === 1
+          ? query.eq(columns.createdBy, filterIds[0])
+          : query.in(columns.createdBy, filterIds)
     }
     return query
   }
@@ -147,6 +153,8 @@ export async function createCampanha(campanha: any) {
 
   if (!session?.user) throw new Error("Não autenticado")
 
+  const { perfilId } = await resolvePerfilIdForUser(supabase, session.user)
+
   const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
 
   const basePayload = {
@@ -158,7 +166,7 @@ export async function createCampanha(campanha: any) {
     data_inicio: campanha.data_inicio || campanha.start_date,
     data_fim: campanha.data_fim || campanha.end_date,
     status: campanha.status || "ativa",
-    criado_por: session.user.id,
+    criado_por: perfilId || undefined,
   }
 
   const portuguesePayload: Record<string, any> = sanitizePayload({
