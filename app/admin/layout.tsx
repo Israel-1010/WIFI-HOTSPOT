@@ -19,7 +19,7 @@ export default async function AdminLayout({
   }
 
   // Apenas admin_geral e admin_revenda podem acessar
-  if (!["admin_geral", "admin_revenda"].includes(session.user.role)) {
+  if (!["admin_geral", "admin_revenda", "operador_noc"].includes(session.user.role)) {
     redirect("/auth/login")
   }
 

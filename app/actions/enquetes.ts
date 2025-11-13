@@ -3,6 +3,33 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth"
+import { ensurePerfilForUser } from "@/lib/perfis"
+
+function normalizeQuestao(questao: any) {
+  if (!questao) return questao
+  let opcoes = questao.opcoes
+  if (typeof opcoes === "string") {
+    try {
+      opcoes = JSON.parse(opcoes)
+    } catch (error) {
+      console.warn("[v0] Falha ao converter opções da enquete", error)
+      opcoes = []
+    }
+  }
+
+  if (!Array.isArray(opcoes)) {
+    opcoes = []
+  }
+
+  return { ...questao, opcoes }
+}
+
+function normalizeEnquete(enquete: any) {
+  return {
+    ...enquete,
+    questoes: (enquete?.questoes || []).map(normalizeQuestao),
+  }
+}
 
 export async function getEnquetes() {
   const supabase = await createClient()
@@ -17,7 +44,7 @@ export async function getEnquetes() {
     .select(
       `
       *,
-      questoes:questoes_enquetes(count)
+      questoes:questoes_enquetes(*)
     `,
     )
     .order("criado_em", { ascending: false })
@@ -27,14 +54,57 @@ export async function getEnquetes() {
     return []
   }
 
-  return enquetes
+  return (enquetes || []).map(normalizeEnquete)
+}
+
+export async function getEnquetesDoCliente(clienteId: string) {
+  const supabase = await createClient()
+
+  let { data, error } = await supabase
+    .from("enquetes")
+    .select(
+      `
+      *,
+      questoes:questoes_enquetes(*)
+    `,
+    )
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+
+  if (error && error.message?.includes("cliente")) {
+    console.warn("[v0] Campo cliente_id não encontrado em enquetes. Usando fallback por criado_por.")
+    error = null
+  }
+
+  if (error || !data || data.length === 0) {
+    const fallback = await supabase
+      .from("enquetes")
+      .select(
+        `
+        *,
+        questoes:questoes_enquetes(*)
+      `,
+      )
+      .eq("criado_por", clienteId)
+      .order("criado_em", { ascending: false })
+
+    data = fallback.data
+    error = fallback.error
+  }
+
+  if (error) {
+    console.error("[v0] Erro ao carregar enquetes do cliente:", error)
+    return []
+  }
+
+  return (data || []).map(normalizeEnquete)
 }
 
 export async function createEnquete(formData: {
   titulo: string
   descricao: string
-  data_inicio: string
-  data_fim: string
+  data_inicio?: string | null
+  data_fim?: string | null
   questoes: Array<{
     pergunta: string
     tipo: string
@@ -49,17 +119,23 @@ export async function createEnquete(formData: {
     throw new Error("Não autorizado")
   }
 
+  const { perfilId } = await ensurePerfilForUser(supabase, session.user)
+  const autorPerfilId = session.user.cliente_id || perfilId
+
+  if (!autorPerfilId) {
+    throw new Error("Não foi possível identificar o perfil do cliente")
+  }
+
   const { data: enquete, error: enqueteError } = await supabase
     .from("enquetes")
     .insert({
       titulo: formData.titulo,
       descricao: formData.descricao,
-      data_inicio: formData.data_inicio,
-      data_fim: formData.data_fim,
-      status: "draft",
+      data_inicio: formData.data_inicio || null,
+      data_fim: formData.data_fim || null,
+      status: "ativa",
       total_respostas: 0,
-      criado_por: session.user.id,
-      revenda_id: session.user.revenda_id,
+      criado_por: autorPerfilId,
     })
     .select()
     .single()
@@ -74,7 +150,7 @@ export async function createEnquete(formData: {
       enquete_id: enquete.id,
       pergunta: q.pergunta,
       tipo: q.tipo,
-      opcoes: q.opcoes ? JSON.stringify(q.opcoes) : null,
+      opcoes: q.opcoes && q.opcoes.length > 0 ? JSON.stringify(q.opcoes) : null,
       obrigatoria: q.obrigatoria,
       ordem: index + 1,
     }))

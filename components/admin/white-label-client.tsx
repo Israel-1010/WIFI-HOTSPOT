@@ -12,15 +12,99 @@ import { updateWhiteLabelConfig, type WhiteLabelConfig } from "@/app/actions/whi
 import { useToastFeedback } from "@/hooks/use-toast-feedback"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+type WhiteLabelFormData = {
+  nome: string
+  dominio: string
+  logo_url: string
+  favicon_url: string
+  cor_primaria: string
+  cor_secundaria: string
+  cor_texto: string
+  cor_fundo: string
+  cor_sidebar: string
+  cor_header: string
+  fonte_primaria: string
+  fonte_secundaria: string
+  estilo_botao: string
+  tema_escuro: boolean
+  endereco: string
+  cidade: string
+  estado: string
+  cep: string
+  email: string
+  telefone: string
+  cnpj: string
+}
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const domainRegex = /^(?!:\/\/)([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/
+
+const stripNonDigits = (value: string) => value.replace(/\D/g, "")
+
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = (event) => reject(event)
+    reader.readAsDataURL(file)
+  })
+
+const isValidCNPJ = (value: string) => {
+  const digits = stripNonDigits(value)
+  if (digits.length !== 14) return false
+  if (/^(\d)\1{13}$/.test(digits)) return false
+
+  const calculateDigit = (length: number) => {
+    let sum = 0
+    let position = length - 7
+    for (let i = 0; i < length; i++) {
+      sum += Number(digits[i]) * position--
+      if (position < 2) position = 9
+    }
+    const result = sum % 11
+    return result < 2 ? 0 : 11 - result
+  }
+
+  const firstDigit = calculateDigit(12)
+  if (firstDigit !== Number(digits[12])) return false
+
+  const secondDigit = calculateDigit(13)
+  return secondDigit === Number(digits[13])
+}
+
+const normalizeCep = (value: string) => {
+  const digits = stripNonDigits(value)
+  if (!digits) return null
+  if (digits.length === 8) {
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`
+  }
+  return digits
+}
+
+const normalizePhone = (value: string) => {
+  const digits = stripNonDigits(value)
+  return digits ? digits : null
+}
+
+const normalizeCnpj = (value: string) => {
+  const digits = stripNonDigits(value)
+  return digits ? digits : null
+}
+
+const sanitizeOptional = (value: string) => {
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : null
+}
+
 interface WhiteLabelClientProps {
   initialConfig: WhiteLabelConfig | null
 }
 
 export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
   const feedback = useToastFeedback()
-  const [config, setConfig] = useState(initialConfig)
+  const [config] = useState(initialConfig)
   const [isSaving, setIsSaving] = useState(false)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<WhiteLabelFormData>({
     nome: config?.nome || "",
     dominio: config?.dominio || "",
     logo_url: config?.logo_url || "",
@@ -35,7 +119,81 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
     fonte_secundaria: config?.fonte_secundaria || "Inter",
     estilo_botao: config?.estilo_botao || "rounded",
     tema_escuro: config?.tema_escuro || false,
+    endereco: config?.endereco || "",
+    cidade: config?.cidade || "",
+    estado: (config?.estado || "").toUpperCase(),
+    cep: config?.cep || "",
+    email: config?.email || "",
+    telefone: config?.telefone || "",
+    cnpj: config?.cnpj || "",
   })
+
+  const handleImageUpload = async (file: File | null, field: "logo_url" | "favicon_url") => {
+    if (!file) return
+    try {
+      const base64 = await fileToBase64(file)
+      setFormData((prev) => ({ ...prev, [field]: base64 }))
+      feedback.success("Imagem adicionada em Base64")
+    } catch (error) {
+      console.error("[v0] Erro ao converter imagem:", error)
+      feedback.error("Não foi possível processar a imagem enviada")
+    }
+  }
+
+  const validateForm = () => {
+    const trimmedName = formData.nome.trim()
+    if (!trimmedName) {
+      feedback.error("Informe o nome da empresa")
+      return false
+    }
+
+    const trimmedEmail = formData.email.trim()
+    if (!trimmedEmail) {
+      feedback.error("Informe um email de contato")
+      return false
+    }
+
+    if (!emailRegex.test(trimmedEmail)) {
+      feedback.error("Informe um email válido")
+      return false
+    }
+
+    const phoneDigits = stripNonDigits(formData.telefone)
+    if (!phoneDigits) {
+      feedback.error("Informe um telefone de contato")
+      return false
+    }
+
+    if (phoneDigits.length < 10) {
+      feedback.error("O telefone informado é inválido")
+      return false
+    }
+
+    const trimmedDomain = formData.dominio.trim()
+    if (trimmedDomain && !domainRegex.test(trimmedDomain.toLowerCase())) {
+      feedback.error("Informe um domínio válido (ex: meudominio.com.br)")
+      return false
+    }
+
+    const cepDigits = stripNonDigits(formData.cep)
+    if (formData.cep && cepDigits.length !== 8) {
+      feedback.error("Informe um CEP válido com 8 dígitos")
+      return false
+    }
+
+    if (formData.cnpj && !isValidCNPJ(formData.cnpj)) {
+      feedback.error("Informe um CNPJ válido")
+      return false
+    }
+
+    const stateValue = formData.estado.trim().toUpperCase()
+    if (stateValue && stateValue.length !== 2) {
+      feedback.error("Informe a sigla do estado (ex: SP)")
+      return false
+    }
+
+    return true
+  }
 
   const handleSave = async () => {
     if (!config?.id) {
@@ -43,9 +201,40 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
       return
     }
 
+    if (!validateForm()) {
+      return
+    }
+
+    const trimmedEmail = formData.email.trim()
+    const normalizedPhone = normalizePhone(formData.telefone)
+    const normalizedCep = normalizeCep(formData.cep)
+    const normalizedCnpjValue = normalizeCnpj(formData.cnpj)
+
     setIsSaving(true)
     try {
-      await updateWhiteLabelConfig(config.id, formData)
+      await updateWhiteLabelConfig(config.id, {
+        nome: formData.nome.trim(),
+        dominio: sanitizeOptional(formData.dominio.toLowerCase()),
+        logo_url: sanitizeOptional(formData.logo_url),
+        favicon_url: sanitizeOptional(formData.favicon_url),
+        cor_primaria: formData.cor_primaria,
+        cor_secundaria: formData.cor_secundaria,
+        cor_texto: formData.cor_texto,
+        cor_fundo: formData.cor_fundo,
+        cor_sidebar: formData.cor_sidebar,
+        cor_header: formData.cor_header,
+        fonte_primaria: formData.fonte_primaria,
+        fonte_secundaria: formData.fonte_secundaria,
+        estilo_botao: formData.estilo_botao,
+        tema_escuro: formData.tema_escuro,
+        endereco: sanitizeOptional(formData.endereco),
+        cidade: sanitizeOptional(formData.cidade),
+        estado: sanitizeOptional(formData.estado.toUpperCase()),
+        cep: normalizedCep,
+        email: trimmedEmail,
+        telefone: normalizedPhone,
+        cnpj: normalizedCnpjValue,
+      })
       feedback.success("Configurações salvas com sucesso! Recarregando...")
       setTimeout(() => window.location.reload(), 1500)
     } catch (error) {
@@ -93,59 +282,191 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
         </TabsList>
 
         <TabsContent value="identidade" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Informações Básicas</CardTitle>
-              <CardDescription>Configure o nome e domínio da sua marca</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="nome">Nome da Empresa</Label>
-                <Input
-                  id="nome"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                  placeholder="Minha Empresa"
-                />
-              </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Informações Básicas</CardTitle>
+                <CardDescription>Configure o nome e domínio da sua marca</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nome">Nome da Empresa</Label>
+                  <Input
+                    id="nome"
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    placeholder="Minha Empresa"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="dominio">Domínio Customizado</Label>
-                <Input
-                  id="dominio"
-                  value={formData.dominio}
-                  onChange={(e) => setFormData({ ...formData, dominio: e.target.value })}
-                  placeholder="meudominio.com.br"
-                />
-                <p className="text-sm text-muted-foreground">Configure seu domínio próprio (opcional)</p>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dominio">Domínio Customizado</Label>
+                  <Input
+                    id="dominio"
+                    value={formData.dominio}
+                    onChange={(e) => setFormData({ ...formData, dominio: e.target.value })}
+                    placeholder="meudominio.com.br"
+                  />
+                  <p className="text-sm text-muted-foreground">Configure seu domínio próprio (opcional)</p>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="logo_url">URL do Logo</Label>
-                <Input
-                  id="logo_url"
-                  value={formData.logo_url}
-                  onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
-                  placeholder="https://..."
-                />
-                {formData.logo_url && (
-                  <div className="mt-2 p-4 border rounded-lg bg-muted/50">
-                    <img src={formData.logo_url || "/placeholder.svg"} alt="Logo" className="h-16 object-contain" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="logo_url">URL do Logo</Label>
+                    <Input
+                      id="logo_url"
+                      value={formData.logo_url}
+                      onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
+                      placeholder="https://..."
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        await handleImageUpload(event.target.files?.[0] || null, "logo_url")
+                        event.target.value = ""
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Envie um arquivo para armazená-lo como Base64.</p>
+                    {formData.logo_url && (
+                      <div className="mt-2 p-4 border rounded-lg bg-muted/50">
+                        <img src={formData.logo_url || "/placeholder.svg"} alt="Logo" className="h-16 object-contain" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="favicon_url">URL do Favicon</Label>
-                <Input
-                  id="favicon_url"
-                  value={formData.favicon_url}
-                  onChange={(e) => setFormData({ ...formData, favicon_url: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="space-y-2">
+                    <Label htmlFor="favicon_url">URL do Favicon</Label>
+                    <Input
+                      id="favicon_url"
+                      value={formData.favicon_url}
+                      onChange={(e) => setFormData({ ...formData, favicon_url: e.target.value })}
+                      placeholder="https://..."
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        await handleImageUpload(event.target.files?.[0] || null, "favicon_url")
+                        event.target.value = ""
+                      }}
+                    />
+                    <p className="text-sm text-muted-foreground">Utilize uma imagem quadrada (32x32px) para melhor resultado</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Contato e Comunicação</CardTitle>
+                <CardDescription>Dados utilizados em emails, rodapés e materiais oficiais</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email de Contato</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="contato@empresa.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="telefone">Telefone</Label>
+                  <Input
+                    id="telefone"
+                    inputMode="tel"
+                    value={formData.telefone}
+                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                    placeholder="(11) 99999-0000"
+                  />
+                  <p className="text-sm text-muted-foreground">Informe um número com DDD para suporte e comunicação oficial</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Endereço</CardTitle>
+                <CardDescription>Informações exibidas em contratos e documentos fiscais</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="endereco">Endereço</Label>
+                  <Input
+                    id="endereco"
+                    value={formData.endereco}
+                    onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                    placeholder="Rua Exemplo, 123"
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="cidade">Cidade</Label>
+                    <Input
+                      id="cidade"
+                      value={formData.cidade}
+                      onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                      placeholder="São Paulo"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="estado">Estado</Label>
+                    <Input
+                      id="estado"
+                      value={formData.estado}
+                      onChange={(e) =>
+                        setFormData({ ...formData, estado: e.target.value.toUpperCase().slice(0, 2) })
+                      }
+                      placeholder="SP"
+                      maxLength={2}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cep">CEP</Label>
+                  <Input
+                    id="cep"
+                    inputMode="numeric"
+                    value={formData.cep}
+                    onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                  <p className="text-sm text-muted-foreground">Use apenas números ou o formato 00000-000</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Informações Legais</CardTitle>
+                <CardDescription>Dados utilizados para emissão de notas e contratos</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cnpj">CNPJ</Label>
+                  <Input
+                    id="cnpj"
+                    inputMode="numeric"
+                    value={formData.cnpj}
+                    onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                    placeholder="00.000.000/0000-00"
+                    maxLength={18}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Obrigatório para emissão de documentos fiscais e integração com gateways de pagamento
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="cores" className="space-y-4">

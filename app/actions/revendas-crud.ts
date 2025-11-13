@@ -1,7 +1,66 @@
 "use server"
 
+import { createHash } from "node:crypto"
+
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+function hashPassword(plain: string) {
+  return createHash("sha256").update(plain).digest("hex")
+}
+
+async function fetchRevendaWithExtras(supabase: SupabaseServerClient, id: string) {
+  const { data: revenda, error: revendaError } = await supabase
+    .from("revendas")
+    .select(`
+      *,
+      plano:planos(nome, preco_mensal)
+    `)
+    .eq("id", id)
+    .maybeSingle()
+
+  if (revendaError) {
+    console.error("[v0] Erro ao buscar revenda atualizada:", revendaError)
+    return null
+  }
+
+  if (!revenda) {
+    return null
+  }
+
+  const [adminUserResult, clientesCountResult] = await Promise.all([
+    supabase
+      .from("usuarios")
+      .select("username, email, telefone, senha_hash")
+      .eq("revenda_id", id)
+      .eq("role", "admin_revenda")
+      .maybeSingle(),
+    supabase
+      .from("usuarios")
+      .select("*", { count: "exact", head: true })
+      .eq("revenda_id", id)
+      .eq("role", "cliente"),
+  ])
+
+  if (adminUserResult.error) {
+    console.error("[v0] Erro ao buscar usuário admin da revenda:", adminUserResult.error)
+  }
+
+  if (clientesCountResult.error) {
+    console.error("[v0] Erro ao contar clientes da revenda:", clientesCountResult.error)
+  }
+
+  return {
+    ...revenda,
+    total_clientes: clientesCountResult.count || 0,
+    username: adminUserResult.data?.username ?? null,
+    email: revenda.email || adminUserResult.data?.email || null,
+    telefone: revenda.telefone || adminUserResult.data?.telefone || null,
+    senha_hash: adminUserResult.data?.senha_hash ?? null,
+  }
+}
 
 export interface RevendaFormData {
   nome: string
@@ -57,15 +116,27 @@ export async function getRevendas() {
   // Buscar contagem de clientes para cada revenda
   const revendasComContagem = await Promise.all(
     (revendas || []).map(async (revenda) => {
-      const { count } = await supabase
-        .from("usuarios")
-        .select("*", { count: "exact", head: true })
-        .eq("revenda_id", revenda.id)
-        .eq("role", "cliente")
+      const [{ count }, { data: adminUser }] = await Promise.all([
+        supabase
+          .from("usuarios")
+          .select("*", { count: "exact", head: true })
+          .eq("revenda_id", revenda.id)
+          .eq("role", "cliente"),
+        supabase
+          .from("usuarios")
+          .select("id, username, email, telefone, senha_hash")
+          .eq("revenda_id", revenda.id)
+          .eq("role", "admin_revenda")
+          .maybeSingle(),
+      ])
 
       return {
         ...revenda,
         total_clientes: count || 0,
+        username: adminUser?.username || null,
+        email: revenda.email || adminUser?.email || null,
+        telefone: revenda.telefone || adminUser?.telefone || null,
+        senha_hash: adminUser?.senha_hash || null,
       }
     }),
   )
@@ -109,6 +180,8 @@ export async function createRevenda(data: RevendaFormData) {
     .insert({
       nome: data.nome,
       cnpj: data.cnpj,
+      email: data.email,
+      telefone: data.telefone,
       dominio: data.dominio,
       plano_id: data.plano_id,
       logo_url: data.logo_url,
@@ -127,12 +200,7 @@ export async function createRevenda(data: RevendaFormData) {
     return { success: false, error: error.message }
   }
 
-  // Hash da senha usando SHA-256
-  const encoder = new TextEncoder()
-  const data_senha = encoder.encode(data.senha)
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data_senha)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const senha_hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+  const senha_hash = hashPassword(data.senha)
 
   const { error: userError } = await supabase.from("usuarios").insert({
     username: data.username,
@@ -153,19 +221,27 @@ export async function createRevenda(data: RevendaFormData) {
     return { success: false, error: "Erro ao criar usuário de acesso: " + userError.message }
   }
 
+  const revendaAtualizada = await fetchRevendaWithExtras(supabase, revenda.id)
+
   revalidatePath("/admin-geral/revendas")
-  return { success: true, data: revenda }
+  return { success: true, data: revendaAtualizada ?? revenda }
 }
 
 export async function updateRevenda(id: string, data: Partial<RevendaFormData>) {
   const supabase = await createClient()
 
+  const { senha, username, ...rest } = data
+
+  const revendaData = Object.fromEntries(
+    Object.entries({
+      ...rest,
+      atualizado_em: new Date().toISOString(),
+    }).filter(([, value]) => value !== undefined),
+  )
+
   const { error } = await supabase
     .from("revendas")
-    .update({
-      ...data,
-      atualizado_em: new Date().toISOString(),
-    })
+    .update(revendaData)
     .eq("id", id)
 
   if (error) {
@@ -173,8 +249,53 @@ export async function updateRevenda(id: string, data: Partial<RevendaFormData>) 
     return { success: false, error: error.message }
   }
 
+  if (senha || username || rest.email || rest.telefone) {
+    const { data: adminUser, error: adminUserError } = await supabase
+      .from("usuarios")
+      .select("id")
+      .eq("revenda_id", id)
+      .eq("role", "admin_revenda")
+      .maybeSingle()
+
+    if (adminUserError) {
+      console.error("[v0] Erro ao buscar admin da revenda:", adminUserError)
+      return { success: false, error: adminUserError.message }
+    }
+
+    if (adminUser?.id) {
+      const userUpdate: Record<string, unknown> = {}
+
+      if (username) {
+        userUpdate.username = username
+      }
+
+      if (rest.email) {
+        userUpdate.email = rest.email
+      }
+
+      if (rest.telefone) {
+        userUpdate.telefone = rest.telefone
+      }
+
+      if (senha) {
+        userUpdate.senha_hash = hashPassword(senha)
+      }
+
+      if (Object.keys(userUpdate).length > 0) {
+        const { error: userError } = await supabase.from("usuarios").update(userUpdate).eq("id", adminUser.id)
+
+        if (userError) {
+          console.error("[v0] Erro ao atualizar usuário admin da revenda:", userError)
+          return { success: false, error: userError.message }
+        }
+      }
+    }
+  }
+
+  const revendaAtualizada = await fetchRevendaWithExtras(supabase, id)
+
   revalidatePath("/admin-geral/revendas")
-  return { success: true }
+  return { success: true, data: revendaAtualizada }
 }
 
 export async function deleteRevenda(id: string) {

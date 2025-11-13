@@ -47,7 +47,7 @@ export async function createSurvey(formData: {
     .insert({
       titulo: formData.titulo,
       descricao: formData.descricao,
-      status: "draft",
+      status: "ativa",
       total_respostas: 0,
       criado_por: user.id,
     })

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Wifi, Clock, ChevronLeft, ChevronRight } from "lucide-react"
+import { Wifi, Clock, ChevronLeft, ChevronRight, Sparkles, ListChecks } from "lucide-react"
 import Image from "next/image"
 
 interface ConfiguracaoPortal {
@@ -31,25 +31,90 @@ interface Provider {
   cor_primaria: string | null
 }
 
+interface HotspotCampanhaConteudo {
+  title?: string
+  description?: string
+  imageUrl?: string
+  videoUrl?: string
+  buttonText?: string
+  buttonUrl?: string
+  mediaType?: string
+}
+
+interface HotspotCampanha {
+  id: string
+  nome?: string
+  titulo?: string
+  descricao?: string | null
+  tipo?: string
+  conteudo?: HotspotCampanhaConteudo | null
+}
+
+interface HotspotEnqueteQuestao {
+  id: string
+  pergunta: string
+  tipo: string
+  opcoes?: string[] | null
+}
+
+interface HotspotEnquete {
+  id: string
+  titulo: string
+  descricao?: string | null
+  questoes?: HotspotEnqueteQuestao[]
+}
+
 interface PortalHotspotClientProps {
   configuracao: ConfiguracaoPortal
   providers: Provider[]
   clienteId: string
+  campanhas?: HotspotCampanha[] | null
+  enquetes?: HotspotEnquete[] | null
 }
 
-export function PortalHotspotClient({ configuracao, providers, clienteId }: PortalHotspotClientProps) {
+export function PortalHotspotClient({
+  configuracao,
+  providers,
+  clienteId,
+  campanhas = [],
+  enquetes = [],
+}: PortalHotspotClientProps) {
   const [tempoRestante, setTempoRestante] = useState(configuracao.slideshow_tempo_minimo)
   const [slideAtual, setSlideAtual] = useState(0)
   const [podeConectar, setPodeConectar] = useState(!configuracao.slideshow_ativo)
-
-  useEffect(() => {
-    console.log("[v0] PortalHotspotClient - Configuração:", configuracao)
-    console.log("[v0] PortalHotspotClient - Providers recebidos:", providers)
-    console.log("[v0] PortalHotspotClient - auth_social_ativo:", configuracao.auth_social_ativo)
-    console.log("[v0] PortalHotspotClient - Quantidade de providers:", providers.length)
-  }, [configuracao, providers])
+  const [campanhaIndex, setCampanhaIndex] = useState(0)
+  const [respostasEnquete, setRespostasEnquete] = useState<Record<string, Record<string, string>>>({})
 
   const slides = [...(configuracao.slideshow_imagens || []), ...(configuracao.slideshow_videos || [])]
+  const campanhasDisponiveis = (campanhas || []).filter(Boolean)
+  const campanhaEmDestaque =
+    campanhasDisponiveis.length > 0 ? campanhasDisponiveis[campanhaIndex % campanhasDisponiveis.length] : null
+  const temCampanhas = campanhasDisponiveis.length > 0
+  const temEnquetes = (enquetes || []).length > 0
+
+  const proximaCampanha = () => {
+    if (!temCampanhas) return
+    setCampanhaIndex((prev) => (prev + 1) % campanhasDisponiveis.length)
+  }
+
+  const campanhaAnterior = () => {
+    if (!temCampanhas) return
+    setCampanhaIndex((prev) => (prev - 1 + campanhasDisponiveis.length) % campanhasDisponiveis.length)
+  }
+
+  const handleRespostaEnquete = (enqueteId: string, questaoId: string, valor: string) => {
+    setRespostasEnquete((prev) => ({
+      ...prev,
+      [enqueteId]: {
+        ...(prev[enqueteId] || {}),
+        [questaoId]: valor,
+      },
+    }))
+  }
+
+  useEffect(() => {
+    setCampanhaIndex(0)
+  }, [campanhas.length])
 
   useEffect(() => {
     if (!configuracao.slideshow_ativo || podeConectar) return
@@ -234,6 +299,121 @@ export function PortalHotspotClient({ configuracao, providers, clienteId }: Port
             </Button>
           )}
         </div>
+
+        {temCampanhas && campanhaEmDestaque && (
+          <div className="mt-8 space-y-3">
+            <div className="flex items-center justify-between text-sm font-medium text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> Campanhas em destaque
+              </span>
+              <div className="flex items-center gap-2">
+                <span>
+                  {campanhaIndex + 1}/{campanhasDisponiveis.length}
+                </span>
+                {campanhasDisponiveis.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="icon" onClick={campanhaAnterior} className="h-7 w-7">
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={proximaCampanha} className="h-7 w-7">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Card className="overflow-hidden border border-dashed border-primary/30 bg-muted/30">
+              {campanhaEmDestaque.conteudo?.videoUrl ? (
+                <video
+                  src={campanhaEmDestaque.conteudo.videoUrl}
+                  className="w-full h-48 object-cover"
+                  controls
+                  muted
+                  playsInline
+                />
+              ) : campanhaEmDestaque.conteudo?.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={campanhaEmDestaque.conteudo.imageUrl}
+                  alt={campanhaEmDestaque.nome || campanhaEmDestaque.titulo || "Campanha"}
+                  className="w-full h-48 object-cover"
+                />
+              ) : null}
+
+              <div className="p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">
+                    {campanhaEmDestaque.nome || campanhaEmDestaque.titulo || "Campanha especial"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {campanhaEmDestaque.conteudo?.description || campanhaEmDestaque.descricao ||
+                      "Aproveite esta oferta exclusiva ao se conectar."}
+                  </p>
+                </div>
+                {campanhaEmDestaque.conteudo?.buttonText && (
+                  <Button
+                    disabled={!campanhaEmDestaque.conteudo.buttonUrl}
+                    onClick={() =>
+                      campanhaEmDestaque.conteudo?.buttonUrl &&
+                      window.open(campanhaEmDestaque.conteudo.buttonUrl, "_blank")
+                    }
+                    className="w-full"
+                  >
+                    {campanhaEmDestaque.conteudo.buttonText}
+                  </Button>
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {temEnquetes && (
+          <div className="mt-8 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <ListChecks className="h-4 w-4" /> Enquetes rápidas
+            </div>
+            {(enquetes || []).map((enquete) => (
+              <Card key={enquete.id} className="p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">{enquete.titulo}</p>
+                  <p className="text-xs text-muted-foreground">{enquete.descricao || "Conte-nos sua opinião"}</p>
+                </div>
+                {(enquete.questoes || []).map((questao) => (
+                  <div key={questao.id} className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">{questao.pergunta}</p>
+                    {questao.opcoes && questao.opcoes.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {questao.opcoes.map((opcao) => {
+                          const selecionada = respostasEnquete[enquete.id]?.[questao.id] === opcao
+                          return (
+                            <button
+                              key={opcao}
+                              type="button"
+                              onClick={() => handleRespostaEnquete(enquete.id, questao.id, opcao)}
+                              className={`rounded-full border px-3 py-1 text-xs transition ${
+                                selecionada
+                                  ? "bg-primary text-white border-primary"
+                                  : "border-muted-foreground/30 text-muted-foreground hover:border-primary"
+                              }`}
+                            >
+                              {opcao}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Resposta livre</p>
+                    )}
+                  </div>
+                ))}
+                <Button variant="secondary" className="w-full" disabled>
+                  Em breve: enviar respostas
+                </Button>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Termos */}
         <p className="text-xs text-center text-muted-foreground mt-6">
