@@ -6,6 +6,16 @@ export type PerfilResolution = {
   candidateIds: string[]
 }
 
+function sanitizePayload(payload: Record<string, any>) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined))
+}
+
+function isColumnError(error: { message?: string } | null) {
+  if (!error?.message) return false
+  const normalized = error.message.toLowerCase()
+  return normalized.includes("column") || normalized.includes("does not exist")
+}
+
 export async function resolvePerfilIdForUser(
   supabase: SupabaseClient<any, "public", any>,
   user: Session["user"] | null | undefined,
@@ -57,4 +67,70 @@ export async function resolvePerfilIdForUser(
   }
 
   return { perfilId: perfilId ?? null, candidateIds: Array.from(candidateIds) }
+}
+
+function mapRoleToPerfilRole(role?: string | null) {
+  if (!role) return "cliente"
+  const adminRoles = new Set(["admin", "admin_geral", "admin_revenda", "operador_noc"])
+  return adminRoles.has(role) ? "admin" : "cliente"
+}
+
+export async function ensurePerfilForUser(
+  supabase: SupabaseClient<any, "public", any>,
+  user: Session["user"] | null | undefined,
+): Promise<PerfilResolution> {
+  const baseResolution = await resolvePerfilIdForUser(supabase, user)
+  if (!user) {
+    return baseResolution
+  }
+
+  if (baseResolution.perfilId) {
+    return baseResolution
+  }
+
+  const fallbackNome = user.nome_completo || user.username || user.email?.split("@")[0] || "Usuário"
+  const now = new Date().toISOString()
+  const richPayload = sanitizePayload({
+    id: user.id,
+    nome: fallbackNome,
+    email: user.email,
+    role: mapRoleToPerfilRole(user.role),
+    ativo: true,
+    revenda_id: user.revenda_id,
+    cliente_id: user.cliente_id,
+    tipo_usuario: user.role,
+    permissoes: user.permissoes,
+    criado_em: now,
+    atualizado_em: now,
+  })
+
+  const fallbackPayload = sanitizePayload({
+    id: user.id,
+    nome: fallbackNome,
+    email: user.email,
+    role: mapRoleToPerfilRole(user.role),
+  })
+
+  const payloads = [richPayload, fallbackPayload, { id: user.id }]
+
+  for (const payload of payloads) {
+    const { data, error } = await supabase
+      .from("perfis")
+      .upsert(payload, { onConflict: "id" })
+      .select("id")
+      .maybeSingle()
+
+    if (!error && data?.id) {
+      const candidateIds = new Set(baseResolution.candidateIds)
+      candidateIds.add(data.id)
+      return { perfilId: data.id, candidateIds: Array.from(candidateIds) }
+    }
+
+    if (error && !isColumnError(error)) {
+      console.warn("[v0] Erro ao garantir perfil para usuário", { userId: user.id, error })
+      return baseResolution
+    }
+  }
+
+  return baseResolution
 }

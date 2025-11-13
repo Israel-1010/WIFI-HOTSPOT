@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth"
-import { resolvePerfilIdForUser } from "@/lib/perfis"
+import { ensurePerfilForUser, resolvePerfilIdForUser } from "@/lib/perfis"
 
 type CampanhaRegistro = {
   id: string
@@ -153,7 +153,7 @@ export async function createCampanha(campanha: any) {
 
   if (!session?.user) throw new Error("Não autenticado")
 
-  const { perfilId } = await resolvePerfilIdForUser(supabase, session.user)
+  const { perfilId } = await ensurePerfilForUser(supabase, session.user)
 
   const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
 

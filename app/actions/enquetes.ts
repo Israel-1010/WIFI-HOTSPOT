@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth"
-import { resolvePerfilIdForUser } from "@/lib/perfis"
+import { ensurePerfilForUser } from "@/lib/perfis"
 
 function normalizeQuestao(questao: any) {
   if (!questao) return questao
@@ -119,7 +119,7 @@ export async function createEnquete(formData: {
     throw new Error("Não autorizado")
   }
 
-  const { perfilId } = await resolvePerfilIdForUser(supabase, session.user)
+  const { perfilId } = await ensurePerfilForUser(supabase, session.user)
 
   const { data: enquete, error: enqueteError } = await supabase
     .from("enquetes")
