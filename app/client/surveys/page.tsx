@@ -32,7 +32,7 @@ export default async function SurveysPage() {
               <Eye className="h-5 w-5 text-green-600" />
               <div>
                 <p className="text-sm text-gray-600">Ativas</p>
-                <p className="text-xl font-bold">{surveys.filter((s) => s.status === "active").length}</p>
+                <p className="text-xl font-bold">{surveys.filter((s) => s.status === "ativa").length}</p>
               </div>
             </div>
           </CardContent>
@@ -44,7 +44,7 @@ export default async function SurveysPage() {
               <Users className="h-5 w-5 text-purple-600" />
               <div>
                 <p className="text-sm text-gray-600">Total Respostas</p>
-                <p className="text-xl font-bold">{surveys.reduce((sum, s) => sum + (s.response_count || 0), 0)}</p>
+                <p className="text-xl font-bold">{surveys.reduce((sum, s) => sum + (s.total_respostas || 0), 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -58,8 +58,7 @@ export default async function SurveysPage() {
                 <p className="text-sm text-gray-600">Taxa de Resposta</p>
                 <p className="text-xl font-bold">
                   {surveys.length > 0
-                    ? Math.round((surveys.reduce((sum, s) => sum + (s.response_count || 0), 0) / surveys.length) * 10) /
-                      10
+                    ? Math.round((surveys.reduce((sum, s) => sum + (s.total_respostas || 0), 0) / surveys.length) * 10) / 10
                     : 0}
                 </p>
               </div>

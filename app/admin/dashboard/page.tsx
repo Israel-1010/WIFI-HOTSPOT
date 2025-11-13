@@ -12,7 +12,7 @@ export default async function DashboardPage() {
     .select("*")
     .gte("criado_em", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
-  const { data: campaignsData } = await supabase.from("campanhas").select("*").eq("status", "active")
+  const { data: campaignsData } = await supabase.from("campanhas").select("*").eq("status", "ativa")
 
   const connectionsToday = logsData?.filter((l) => l.tipo === "connection").length || 0
   const leadsCount = logsData?.filter((l) => l.acao === "lead_captured").length || 0

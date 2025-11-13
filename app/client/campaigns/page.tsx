@@ -35,7 +35,7 @@ export default async function CampaignsPage() {
               <Play className="h-5 w-5 text-green-600" />
               <div>
                 <p className="text-sm text-gray-600">Ativas</p>
-                <p className="text-xl font-bold">{campaigns.filter((c) => c.status === "active").length}</p>
+                <p className="text-xl font-bold">{campaigns.filter((c) => c.status === "ativa").length}</p>
               </div>
             </div>
           </CardContent>
@@ -47,7 +47,7 @@ export default async function CampaignsPage() {
               <Eye className="h-5 w-5 text-purple-600" />
               <div>
                 <p className="text-sm text-gray-600">Total Views</p>
-                <p className="text-xl font-bold">{campaigns.reduce((sum, c) => sum + (c.views || 0), 0)}</p>
+                <p className="text-xl font-bold">{campaigns.reduce((sum, c) => sum + (c.visualizacoes || 0), 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -59,7 +59,7 @@ export default async function CampaignsPage() {
               <Users className="h-5 w-5 text-orange-600" />
               <div>
                 <p className="text-sm text-gray-600">Conversões</p>
-                <p className="text-xl font-bold">{campaigns.reduce((sum, c) => sum + (c.conversions || 0), 0)}</p>
+                <p className="text-xl font-bold">{campaigns.reduce((sum, c) => sum + (c.conversoes || 0), 0)}</p>
               </div>
             </div>
           </CardContent>

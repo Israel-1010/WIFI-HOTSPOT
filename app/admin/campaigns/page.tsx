@@ -42,8 +42,16 @@ export default async function CampaignsPage() {
                     <CardTitle className="text-xl">{campaign.nome}</CardTitle>
                     <div className="flex items-center space-x-2 mt-2">
                       <Badge variant="secondary">{campaign.tipo}</Badge>
-                      <Badge variant={campaign.status === "active" ? "default" : "secondary"}>
-                        {campaign.status === "active" ? "Ativa" : "Pausada"}
+                      <Badge
+                        variant={
+                          campaign.status === "ativa" ? "default" : campaign.status === "pausada" ? "secondary" : "outline"
+                        }
+                      >
+                        {campaign.status === "ativa"
+                          ? "Ativa"
+                          : campaign.status === "pausada"
+                            ? "Pausada"
+                            : "Concluída"}
                       </Badge>
                       {campaign.posicao_modal && <Badge variant="outline">Modal: {campaign.posicao_modal}</Badge>}
                     </div>

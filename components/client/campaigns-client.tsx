@@ -18,7 +18,7 @@ interface Campaign {
   id: string
   nome: string
   tipo: string
-  status: string
+  status: "ativa" | "pausada" | "concluida" | string
   visualizacoes: number
   cliques: number
   conversoes: number
@@ -89,11 +89,14 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
   }
 
   const handleToggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === "active" ? "paused" : "active"
+    const newStatus = currentStatus === "ativa" ? "pausada" : "ativa"
     try {
       await updateCampanhaStatus(id, newStatus)
       setCampaigns(campaigns.map((c) => (c.id === id ? { ...c, status: newStatus } : c)))
-      toast({ title: "Status atualizado", description: `Campanha ${newStatus === "active" ? "ativada" : "pausada"}.` })
+      toast({
+        title: "Status atualizado",
+        description: `Campanha ${newStatus === "ativa" ? "ativada" : "pausada"}.`,
+      })
     } catch (error) {
       console.error("[v0] Error updating campaign:", error)
       toast({ title: "Erro ao atualizar campanha", description: "Tente novamente.", variant: "destructive" })
@@ -667,14 +670,20 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                         <h3 className="text-lg font-semibold">{campaign.nome}</h3>
                         <Badge
                           variant={
-                            campaign.status === "active"
+                            campaign.status === "ativa"
                               ? "default"
-                              : campaign.status === "paused"
+                              : campaign.status === "pausada"
                                 ? "secondary"
                                 : "outline"
                           }
                         >
-                          {campaign.status === "active" ? "Ativa" : campaign.status === "paused" ? "Pausada" : "Rascunho"}
+                          {campaign.status === "ativa"
+                            ? "Ativa"
+                            : campaign.status === "pausada"
+                              ? "Pausada"
+                              : campaign.status === "concluida"
+                                ? "Concluída"
+                                : "Status desconhecido"}
                         </Badge>
                         <Badge variant="outline">{campaign.tipo}</Badge>
                       </div>
@@ -689,7 +698,7 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
 
                   <div className="flex items-center space-x-2">
                     <Button variant="outline" size="sm" onClick={() => handleToggleStatus(campaign.id, campaign.status)}>
-                      {campaign.status === "active" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {campaign.status === "ativa" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => handleEditClick(campaign)}>
                       <Edit className="h-4 w-4" />

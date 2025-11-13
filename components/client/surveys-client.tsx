@@ -11,72 +11,103 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Eye, Trash2 } from "lucide-react"
 import { createEnquete, updateEnqueteStatus, deleteEnquete } from "@/app/actions/enquetes"
 
+type QuestionType = "texto" | "escala" | "multipla_escolha" | "sim_nao"
+
 interface SurveyQuestion {
-  type: "text" | "rating" | "multiple" | "yesno"
-  question: string
-  options?: string[]
-  required: boolean
+  tipo: QuestionType
+  pergunta: string
+  opcoes?: string[]
+  obrigatoria: boolean
 }
 
 interface Survey {
-  id: string // Alterado de number para string (UUID)
-  title: string
-  description: string
-  status: "active" | "paused" | "draft"
-  response_count: number
-  questions?: SurveyQuestion[]
-  created_at: string
+  id: string
+  titulo: string
+  descricao?: string | null
+  status: "ativa" | "pausada" | "encerrada" | string
+  total_respostas?: number | null
+  questoes?: SurveyQuestion[]
+  criado_em?: string
+  created_at?: string
 }
 
 export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) {
-  const [surveys, setSurveys] = useState<Survey[]>(initialSurveys)
+  const [surveys, setSurveys] = useState<Survey[]>(() =>
+    initialSurveys.map((survey) => ({
+      ...survey,
+      questoes: (survey.questoes || []).map((questao) => {
+        const rawOptions = questao.opcoes as unknown
+        const opcoes = Array.isArray(rawOptions)
+          ? (rawOptions as string[])
+          : typeof rawOptions === "string"
+            ? [rawOptions]
+            : []
+
+        return {
+          ...questao,
+          opcoes,
+        }
+      }),
+    })),
+  )
   const [isCreating, setIsCreating] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [newSurvey, setNewSurvey] = useState({
-    title: "",
-    description: "",
-    questions: [] as SurveyQuestion[],
+    titulo: "",
+    descricao: "",
+    questoes: [] as SurveyQuestion[],
   })
-  const [newQuestion, setNewQuestion] = useState<Partial<SurveyQuestion>>({
-    type: "text",
-    question: "",
-    required: false,
+  const [newQuestion, setNewQuestion] = useState<SurveyQuestion>({
+    tipo: "texto",
+    pergunta: "",
+    obrigatoria: false,
+    opcoes: [],
   })
 
   const addQuestion = () => {
-    if (!newQuestion.question) return
+    if (!newQuestion.pergunta) return
 
     const question: SurveyQuestion = {
-      type: newQuestion.type || "text",
-      question: newQuestion.question,
-      options: newQuestion.options,
-      required: newQuestion.required || false,
+      tipo: newQuestion.tipo,
+      pergunta: newQuestion.pergunta,
+      opcoes: newQuestion.opcoes?.length ? newQuestion.opcoes : undefined,
+      obrigatoria: newQuestion.obrigatoria,
     }
 
     setNewSurvey({
       ...newSurvey,
-      questions: [...newSurvey.questions, question],
+      questoes: [...newSurvey.questoes, question],
     })
 
     setNewQuestion({
-      type: "text",
-      question: "",
-      required: false,
+      tipo: "texto",
+      pergunta: "",
+      obrigatoria: false,
+      opcoes: [],
     })
   }
 
   const handleCreate = async () => {
-    if (!newSurvey.title || newSurvey.questions.length === 0) {
+    if (!newSurvey.titulo || newSurvey.questoes.length === 0) {
       alert("Preencha o título e adicione pelo menos uma pergunta")
       return
     }
 
     setIsSubmitting(true)
     try {
-      await createEnquete(newSurvey)
+      const created = await createEnquete(newSurvey)
+      setSurveys((prev) => [
+        {
+          ...created,
+          questoes: newSurvey.questoes,
+          titulo: created?.titulo ?? newSurvey.titulo,
+          descricao: created?.descricao ?? newSurvey.descricao,
+          total_respostas: created?.total_respostas ?? 0,
+        } as Survey,
+        ...prev,
+      ])
       setIsCreating(false)
-      setNewSurvey({ title: "", description: "", questions: [] })
-      window.location.reload()
+      setNewSurvey({ titulo: "", descricao: "", questoes: [] })
     } catch (error) {
       console.error("[v0] Error creating survey:", error)
       alert("Erro ao criar enquete")
@@ -86,10 +117,10 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
   }
 
   const toggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === "active" ? "paused" : "active"
+    const newStatus = currentStatus === "ativa" ? "pausada" : "ativa"
     try {
       await updateEnqueteStatus(id, newStatus)
-      setSurveys(surveys.map((s) => (s.id === id ? { ...s, status: newStatus as any } : s)))
+      setSurveys(surveys.map((s) => (s.id === id ? { ...s, status: newStatus as Survey["status"] } : s)))
     } catch (error) {
       console.error("[v0] Error updating survey:", error)
       alert("Erro ao atualizar enquete")
@@ -108,13 +139,13 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
     }
   }
 
-  const getQuestionTypeIcon = (type: string) => {
+  const getQuestionTypeIcon = (type: QuestionType) => {
     switch (type) {
-      case "rating":
+      case "escala":
         return "⭐"
-      case "multiple":
+      case "multipla_escolha":
         return "☑️"
-      case "yesno":
+      case "sim_nao":
         return "✅"
       default:
         return "📝"
@@ -141,8 +172,8 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                 <div className="space-y-2">
                   <Label>Título da Enquete</Label>
                   <Input
-                    value={newSurvey.title}
-                    onChange={(e) => setNewSurvey({ ...newSurvey, title: e.target.value })}
+                    value={newSurvey.titulo}
+                    onChange={(e) => setNewSurvey({ ...newSurvey, titulo: e.target.value })}
                     placeholder="Ex: Pesquisa de Satisfação"
                   />
                 </div>
@@ -150,8 +181,8 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                 <div className="space-y-2">
                   <Label>Descrição</Label>
                   <Textarea
-                    value={newSurvey.description}
-                    onChange={(e) => setNewSurvey({ ...newSurvey, description: e.target.value })}
+                    value={newSurvey.descricao}
+                    onChange={(e) => setNewSurvey({ ...newSurvey, descricao: e.target.value })}
                     placeholder="Breve descrição da enquete"
                     rows={2}
                   />
@@ -166,21 +197,21 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                     <Label>Tipo de Pergunta</Label>
                     <select
                       className="w-full p-2 border rounded"
-                      value={newQuestion.type}
-                      onChange={(e) => setNewQuestion({ ...newQuestion, type: e.target.value as any })}
+                      value={newQuestion.tipo}
+                      onChange={(e) => setNewQuestion({ ...newQuestion, tipo: e.target.value as QuestionType })}
                     >
-                      <option value="text">📝 Texto</option>
-                      <option value="rating">⭐ Avaliação (1-5)</option>
-                      <option value="multiple">☑️ Múltipla Escolha</option>
-                      <option value="yesno">✅ Sim/Não</option>
+                      <option value="texto">📝 Texto</option>
+                      <option value="escala">⭐ Avaliação (1-5)</option>
+                      <option value="multipla_escolha">☑️ Múltipla Escolha</option>
+                      <option value="sim_nao">✅ Sim/Não</option>
                     </select>
                   </div>
 
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
-                      checked={newQuestion.required}
-                      onChange={(e) => setNewQuestion({ ...newQuestion, required: e.target.checked })}
+                      checked={newQuestion.obrigatoria}
+                      onChange={(e) => setNewQuestion({ ...newQuestion, obrigatoria: e.target.checked })}
                     />
                     <Label>Obrigatória</Label>
                   </div>
@@ -189,13 +220,13 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                 <div className="space-y-2">
                   <Label>Pergunta</Label>
                   <Input
-                    value={newQuestion.question || ""}
-                    onChange={(e) => setNewQuestion({ ...newQuestion, question: e.target.value })}
+                    value={newQuestion.pergunta || ""}
+                    onChange={(e) => setNewQuestion({ ...newQuestion, pergunta: e.target.value })}
                     placeholder="Digite sua pergunta"
                   />
                 </div>
 
-                {newQuestion.type === "multiple" && (
+                {newQuestion.tipo === "multipla_escolha" && (
                   <div className="space-y-2">
                     <Label>Opções (uma por linha)</Label>
                     <Textarea
@@ -203,7 +234,7 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                       onChange={(e) =>
                         setNewQuestion({
                           ...newQuestion,
-                          options: e.target.value.split("\n").filter((o) => o.trim()),
+                          opcoes: e.target.value.split("\n").filter((o) => o.trim()),
                         })
                       }
                       rows={3}
@@ -216,25 +247,25 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                 </Button>
               </div>
 
-              {newSurvey.questions.length > 0 && (
+              {newSurvey.questoes.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="font-semibold">Perguntas ({newSurvey.questions.length})</h3>
-                  {newSurvey.questions.map((question, index) => (
+                  <h3 className="font-semibold">Perguntas ({newSurvey.questoes.length})</h3>
+                  {newSurvey.questoes.map((question, index) => (
                     <div key={index} className="border rounded p-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
-                            <span>{getQuestionTypeIcon(question.type)}</span>
+                            <span>{getQuestionTypeIcon(question.tipo)}</span>
                             <span className="font-medium">Pergunta {index + 1}</span>
-                            {question.required && (
+                            {question.obrigatoria && (
                               <Badge variant="outline" className="text-xs">
                                 Obrigatória
                               </Badge>
                             )}
                           </div>
-                          <p className="text-gray-700">{question.question}</p>
-                          {question.options && (
-                            <div className="mt-2 text-sm text-gray-600">Opções: {question.options.join(", ")}</div>
+                          <p className="text-gray-700">{question.pergunta}</p>
+                          {question.opcoes && question.opcoes.length > 0 && (
+                            <div className="mt-2 text-sm text-gray-600">Opções: {question.opcoes.join(", ")}</div>
                           )}
                         </div>
                         <Button
@@ -243,7 +274,7 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
                           onClick={() =>
                             setNewSurvey({
                               ...newSurvey,
-                              questions: newSurvey.questions.filter((_, i) => i !== index),
+                              questoes: newSurvey.questoes.filter((_, i) => i !== index),
                             })
                           }
                         >
@@ -262,7 +293,7 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
               </Button>
               <Button
                 onClick={handleCreate}
-                disabled={isSubmitting || !newSurvey.title || newSurvey.questions.length === 0}
+                disabled={isSubmitting || !newSurvey.titulo || newSurvey.questoes.length === 0}
               >
                 {isSubmitting ? "Criando..." : "Criar Enquete"}
               </Button>
@@ -278,33 +309,45 @@ export function SurveysClient({ initialSurveys }: { initialSurveys: Survey[] }) 
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-2 mb-2">
-                    <h3 className="text-lg font-semibold">{survey.title}</h3>
+                    <h3 className="text-lg font-semibold">{survey.titulo}</h3>
                     <Badge
                       variant={
-                        survey.status === "active" ? "default" : survey.status === "paused" ? "secondary" : "outline"
+                        survey.status === "ativa"
+                          ? "default"
+                          : survey.status === "pausada"
+                            ? "secondary"
+                            : "outline"
                       }
                     >
-                      {survey.status === "active" ? "Ativa" : survey.status === "paused" ? "Pausada" : "Rascunho"}
+                      {survey.status === "ativa"
+                        ? "Ativa"
+                        : survey.status === "pausada"
+                          ? "Pausada"
+                          : survey.status === "encerrada"
+                            ? "Encerrada"
+                            : "Status desconhecido"}
                     </Badge>
                   </div>
-                  <p className="text-gray-600 mb-2">{survey.description}</p>
+                  <p className="text-gray-600 mb-2">{survey.descricao}</p>
                   <div className="flex items-center space-x-4 text-sm text-gray-500">
-                    <span>{Array.isArray(survey.questions) ? survey.questions.length : 0} perguntas</span>
+                    <span>{Array.isArray(survey.questoes) ? survey.questoes.length : 0} perguntas</span>
                     <span>•</span>
-                    <span>Criada em {new Date(survey.created_at).toLocaleDateString()}</span>
+                    <span>
+                      Criada em {new Date(survey.criado_em || survey.created_at || Date.now()).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 text-center mr-6">
                   <div>
                     <p className="text-sm text-gray-600">Respostas</p>
-                    <p className="text-xl font-bold">{survey.response_count}</p>
+                    <p className="text-xl font-bold">{survey.total_respostas || 0}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center space-x-2">
                   <Button variant="outline" size="sm" onClick={() => toggleStatus(survey.id, survey.status)}>
-                    {survey.status === "active" ? "Pausar" : "Ativar"}
+                    {survey.status === "ativa" ? "Pausar" : "Ativar"}
                   </Button>
                   <Button variant="outline" size="sm">
                     <Eye className="h-4 w-4" />

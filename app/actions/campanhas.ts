@@ -91,7 +91,7 @@ export async function createCampanha(campanha: any) {
       posicao_modal: campanha.posicao_modal || campanha.modal_position || "center",
       data_inicio: campanha.data_inicio || campanha.start_date,
       data_fim: campanha.data_fim || campanha.end_date,
-      status: "draft",
+      status: "ativa",
       visualizacoes: 0,
       cliques: 0,
       conversoes: 0,

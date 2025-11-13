@@ -4,6 +4,32 @@ import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth"
 
+function normalizeQuestao(questao: any) {
+  if (!questao) return questao
+  let opcoes = questao.opcoes
+  if (typeof opcoes === "string") {
+    try {
+      opcoes = JSON.parse(opcoes)
+    } catch (error) {
+      console.warn("[v0] Falha ao converter opções da enquete", error)
+      opcoes = []
+    }
+  }
+
+  if (!Array.isArray(opcoes)) {
+    opcoes = []
+  }
+
+  return { ...questao, opcoes }
+}
+
+function normalizeEnquete(enquete: any) {
+  return {
+    ...enquete,
+    questoes: (enquete?.questoes || []).map(normalizeQuestao),
+  }
+}
+
 export async function getEnquetes() {
   const supabase = await createClient()
   const session = await getSession()
@@ -17,7 +43,7 @@ export async function getEnquetes() {
     .select(
       `
       *,
-      questoes:questoes_enquetes(count)
+      questoes:questoes_enquetes(*)
     `,
     )
     .order("criado_em", { ascending: false })
@@ -27,7 +53,7 @@ export async function getEnquetes() {
     return []
   }
 
-  return enquetes
+  return (enquetes || []).map(normalizeEnquete)
 }
 
 export async function getEnquetesDoCliente(clienteId: string) {
@@ -70,32 +96,14 @@ export async function getEnquetesDoCliente(clienteId: string) {
     return []
   }
 
-  return (
-    (data || []).map((enquete) => ({
-      ...enquete,
-      questoes: (enquete.questoes || []).map((questao: any) => ({
-        ...questao,
-        opcoes:
-          typeof questao.opcoes === "string"
-            ? (() => {
-                try {
-                  return JSON.parse(questao.opcoes)
-                } catch (err) {
-                  console.warn("[v0] Falha ao converter opções da enquete", err)
-                  return []
-                }
-              })()
-            : questao.opcoes,
-      })),
-    })) || []
-  )
+  return (data || []).map(normalizeEnquete)
 }
 
 export async function createEnquete(formData: {
   titulo: string
   descricao: string
-  data_inicio: string
-  data_fim: string
+  data_inicio?: string | null
+  data_fim?: string | null
   questoes: Array<{
     pergunta: string
     tipo: string
@@ -115,12 +123,11 @@ export async function createEnquete(formData: {
     .insert({
       titulo: formData.titulo,
       descricao: formData.descricao,
-      data_inicio: formData.data_inicio,
-      data_fim: formData.data_fim,
-      status: "draft",
+      data_inicio: formData.data_inicio || null,
+      data_fim: formData.data_fim || null,
+      status: "ativa",
       total_respostas: 0,
       criado_por: session.user.id,
-      revenda_id: session.user.revenda_id,
     })
     .select()
     .single()
@@ -135,7 +142,7 @@ export async function createEnquete(formData: {
       enquete_id: enquete.id,
       pergunta: q.pergunta,
       tipo: q.tipo,
-      opcoes: q.opcoes ? JSON.stringify(q.opcoes) : null,
+      opcoes: q.opcoes && q.opcoes.length > 0 ? JSON.stringify(q.opcoes) : null,
       obrigatoria: q.obrigatoria,
       ordem: index + 1,
     }))
