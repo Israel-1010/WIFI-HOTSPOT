@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+import { getSession } from "@/lib/auth"
 
 type CampanhaRegistro = {
   id: string
@@ -22,15 +23,12 @@ function isMissingClienteColumn(error: { message?: string } | null) {
 
 export async function getCampanhas({ includeAll = false }: { includeAll?: boolean } = {}) {
   const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const session = await getSession()
 
   let query = supabase.from("campanhas").select("*").order("criado_em", { ascending: false })
 
-  if (!includeAll && user?.id) {
-    query = query.eq("criado_por", user.id)
+  if (!includeAll && session?.user?.id) {
+    query = query.eq("criado_por", session.user.id)
   }
 
   const { data, error } = await query
@@ -74,31 +72,36 @@ export async function getCampanhasDoCliente(clienteId: string) {
 
 export async function createCampanha(campanha: any) {
   const supabase = await createClient()
+  const session = await getSession()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  if (!session?.user) throw new Error("Não autenticado")
 
-  if (!user) throw new Error("Não autenticado")
+  const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
 
-  const { data, error } = await supabase
-    .from("campanhas")
-    .insert({
-      nome: campanha.nome || campanha.name,
-      tipo: campanha.tipo || campanha.type,
-      conteudo: campanha.conteudo || campanha.content,
-      descricao: campanha.descricao || campanha.description,
-      posicao_modal: campanha.posicao_modal || campanha.modal_position || "center",
-      data_inicio: campanha.data_inicio || campanha.start_date,
-      data_fim: campanha.data_fim || campanha.end_date,
-      status: "ativa",
-      visualizacoes: 0,
-      cliques: 0,
-      conversoes: 0,
-      criado_por: user.id,
-    })
-    .select()
-    .single()
+  const basePayload = {
+    nome: campanha.nome || campanha.name,
+    tipo: campanha.tipo || campanha.type,
+    conteudo: campanha.conteudo || campanha.content,
+    descricao: campanha.descricao || campanha.description,
+    posicao_modal: campanha.posicao_modal || campanha.modal_position || "center",
+    data_inicio: campanha.data_inicio || campanha.start_date,
+    data_fim: campanha.data_fim || campanha.end_date,
+    status: "ativa",
+    visualizacoes: 0,
+    cliques: 0,
+    conversoes: 0,
+    criado_por: session.user.id,
+  }
+
+  const payload: Record<string, any> = clienteId ? { ...basePayload, cliente_id: clienteId } : basePayload
+
+  let { data, error } = await supabase.from("campanhas").insert(payload).select().single()
+
+  if (error && isMissingClienteColumn(error) && "cliente_id" in payload) {
+    console.warn("[v0] Campo cliente_id ausente em campanhas. Recriando registro sem o campo.")
+    const { cliente_id: _ignored, ...fallbackPayload } = payload
+    ;({ data, error } = await supabase.from("campanhas").insert(fallbackPayload).select().single())
+  }
 
   if (error) {
     console.error("[v0] Error creating campaign:", error)
@@ -149,12 +152,9 @@ export async function updateCampanha(
   },
 ) {
   const supabase = await createClient()
+  const session = await getSession()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!session?.user) {
     throw new Error("Não autorizado")
   }
 
