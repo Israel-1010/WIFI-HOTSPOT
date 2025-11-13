@@ -62,6 +62,24 @@ export function AnunciosClient({
     ordem: 0,
   })
 
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = (event) => reject(event)
+      reader.readAsDataURL(file)
+    })
+
+  const handleUploadImagem = async (file: File | null) => {
+    if (!file) return
+    try {
+      const base64 = await fileToBase64(file)
+      setFormData((prev) => ({ ...prev, imagem_url: base64 }))
+    } catch (error) {
+      console.error("[v0] Erro ao carregar imagem do anúncio:", error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -228,6 +246,18 @@ export function AnunciosClient({
                     onChange={(e) => setFormData({ ...formData, imagem_url: e.target.value })}
                     placeholder="https://..."
                   />
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0] || null
+                      await handleUploadImagem(file)
+                      event.target.value = ""
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Faça upload para salvar a imagem em Base64 no anúncio.
+                  </p>
                 </div>
               )}
 

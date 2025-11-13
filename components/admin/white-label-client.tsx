@@ -41,6 +41,14 @@ const domainRegex = /^(?!:\/\/)([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/
 
 const stripNonDigits = (value: string) => value.replace(/\D/g, "")
 
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = (event) => reject(event)
+    reader.readAsDataURL(file)
+  })
+
 const isValidCNPJ = (value: string) => {
   const digits = stripNonDigits(value)
   if (digits.length !== 14) return false
@@ -119,6 +127,18 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
     telefone: config?.telefone || "",
     cnpj: config?.cnpj || "",
   })
+
+  const handleImageUpload = async (file: File | null, field: "logo_url" | "favicon_url") => {
+    if (!file) return
+    try {
+      const base64 = await fileToBase64(file)
+      setFormData((prev) => ({ ...prev, [field]: base64 }))
+      feedback.success("Imagem adicionada em Base64")
+    } catch (error) {
+      console.error("[v0] Erro ao converter imagem:", error)
+      feedback.error("Não foi possível processar a imagem enviada")
+    }
+  }
 
   const validateForm = () => {
     const trimmedName = formData.nome.trim()
@@ -299,6 +319,15 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
                       onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
                       placeholder="https://..."
                     />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        await handleImageUpload(event.target.files?.[0] || null, "logo_url")
+                        event.target.value = ""
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Envie um arquivo para armazená-lo como Base64.</p>
                     {formData.logo_url && (
                       <div className="mt-2 p-4 border rounded-lg bg-muted/50">
                         <img src={formData.logo_url || "/placeholder.svg"} alt="Logo" className="h-16 object-contain" />
@@ -313,6 +342,14 @@ export function WhiteLabelClient({ initialConfig }: WhiteLabelClientProps) {
                       value={formData.favicon_url}
                       onChange={(e) => setFormData({ ...formData, favicon_url: e.target.value })}
                       placeholder="https://..."
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        await handleImageUpload(event.target.files?.[0] || null, "favicon_url")
+                        event.target.value = ""
+                      }}
                     />
                     <p className="text-sm text-muted-foreground">Utilize uma imagem quadrada (32x32px) para melhor resultado</p>
                   </div>

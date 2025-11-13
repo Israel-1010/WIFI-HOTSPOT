@@ -63,6 +63,43 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
     conteudo: { ...defaultConteudo },
   })
 
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = (event) => reject(event)
+      reader.readAsDataURL(file)
+    })
+
+  const handleUploadImage = async (file: File | null, mode: "new" | "edit") => {
+    if (!file) return
+    try {
+      const base64 = await fileToBase64(file)
+      if (mode === "new") {
+        setNewCampaign((prev) => ({
+          ...prev,
+          conteudo: { ...prev.conteudo, imageUrl: base64 },
+        }))
+      } else {
+        setEditingCampaign((prev) =>
+          prev
+            ? {
+                ...prev,
+                conteudo: { ...prev.conteudo, imageUrl: base64 },
+              }
+            : prev,
+        )
+      }
+      toast({
+        title: "Imagem carregada",
+        description: "Convertida para Base64 e pronta para publicação.",
+      })
+    } catch (error) {
+      console.error("[v0] Erro ao converter imagem:", error)
+      toast({ title: "Erro ao carregar imagem", description: "Tente outro arquivo.", variant: "destructive" })
+    }
+  }
+
   const resetNewCampaign = () => {
     setNewCampaign({ nome: "", tipo: "popup", descricao: "", conteudo: { ...defaultConteudo } })
   }
@@ -324,6 +361,18 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                           }
                           placeholder="https://cdn.meusite.com/banner.jpg"
                         />
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0] || null
+                            await handleUploadImage(file, "new")
+                            event.target.value = ""
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Você pode colar uma URL ou enviar um arquivo (armazenado como Base64).
+                        </p>
                       </>
                     )}
 
@@ -586,6 +635,18 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                             })
                           }
                         />
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0] || null
+                            await handleUploadImage(file, "edit")
+                            event.target.value = ""
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Faça upload para salvar o arquivo como Base64 na campanha.
+                        </p>
                       </>
                     )}
                   </div>

@@ -28,6 +28,14 @@ import { updateConfiguracaoPortal } from "@/app/actions/portal-hotspot"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
 
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = (event) => reject(event)
+    reader.readAsDataURL(file)
+  })
+
 export type FluxoAutenticacao = "multi" | "single"
 export type MetodoPreferido = "social" | "email" | "voucher"
 export type LoginLayout = "grid" | "lista"
@@ -375,6 +383,36 @@ export function PortalPreviewClient({
     return null
   }
 
+  const handleLogoUpload = async (file: File | null) => {
+    if (!file) return
+    try {
+      const base64 = await fileToBase64(file)
+      setConfig((prev) => ({ ...prev, logo_url: base64 }))
+      toast({ title: "Logo atualizado", description: "Arquivo convertido para Base64." })
+    } catch (error) {
+      console.error("[v0] Erro ao enviar logo:", error)
+      toast({ title: "Erro ao enviar logo", description: "Tente novamente.", variant: "destructive" })
+    }
+  }
+
+  const handleSlideshowUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    try {
+      const base64List = await Promise.all(Array.from(files).map((file) => fileToBase64(file)))
+      setConfig((prev) => ({
+        ...prev,
+        slideshow_imagens: [...(prev.slideshow_imagens || []), ...base64List],
+      }))
+      toast({
+        title: "Slideshow atualizado",
+        description: `${base64List.length} imagem(ns) convertidas para Base64.`,
+      })
+    } catch (error) {
+      console.error("[v0] Erro ao enviar imagens do slideshow:", error)
+      toast({ title: "Erro ao enviar imagens", description: "Tente novamente.", variant: "destructive" })
+    }
+  }
+
   const handleSave = async () => {
     const errorMsg = validateBeforeSave()
     if (errorMsg) {
@@ -435,6 +473,18 @@ export function PortalPreviewClient({
                     onChange={(e) => setConfig({ ...config, logo_url: e.target.value })}
                     placeholder="https://exemplo.com/logo.png"
                   />
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    className="mt-2"
+                    onChange={async (event) => {
+                      await handleLogoUpload(event.target.files?.[0] || null)
+                      event.target.value = ""
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Faça upload para armazenar o logo diretamente em Base64.
+                  </p>
                 </div>
 
                 {/* Paletas rápidas */}
@@ -558,6 +608,18 @@ export function PortalPreviewClient({
                       placeholder="https://exemplo.com/img1.jpg, https://exemplo.com/img2.jpg"
                       rows={3}
                     />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={async (event) => {
+                        await handleSlideshowUpload(event.target.files)
+                        event.target.value = ""
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Arraste ou selecione múltiplas imagens para convertê-las automaticamente em Base64.
+                    </p>
                   </div>
                 </>
               )}
