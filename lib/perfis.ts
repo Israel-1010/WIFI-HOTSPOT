@@ -16,6 +16,23 @@ function isColumnError(error: { message?: string } | null) {
   return normalized.includes("column") || normalized.includes("does not exist")
 }
 
+async function syncUsuarioClienteId(
+  supabase: SupabaseClient<any, "public", any>,
+  user: Session["user"] | null | undefined,
+  perfilId: string | null,
+) {
+  if (!user?.id || !perfilId || user.cliente_id === perfilId) {
+    return
+  }
+
+  const { error } = await supabase.from("usuarios").update({ cliente_id: perfilId }).eq("id", user.id)
+  if (error) {
+    console.warn("[v0] Falha ao sincronizar cliente_id do usuário", { userId: user.id, error })
+  } else {
+    user.cliente_id = perfilId
+  }
+}
+
 export async function resolvePerfilIdForUser(
   supabase: SupabaseClient<any, "public", any>,
   user: Session["user"] | null | undefined,
@@ -25,11 +42,11 @@ export async function resolvePerfilIdForUser(
     return { perfilId: null, candidateIds: [] }
   }
 
-  if (user.id) {
-    candidateIds.add(user.id)
-  }
   if (user.cliente_id) {
     candidateIds.add(user.cliente_id)
+  }
+  if (user.id) {
+    candidateIds.add(user.id)
   }
 
   const checkedIds = new Set<string>()
@@ -47,10 +64,10 @@ export async function resolvePerfilIdForUser(
     return data?.id ?? null
   }
 
-  let perfilId = await lookupPerfilById(user.id)
+  let perfilId = await lookupPerfilById(user.cliente_id)
 
-  if (!perfilId && user.cliente_id) {
-    perfilId = await lookupPerfilById(user.cliente_id)
+  if (!perfilId) {
+    perfilId = await lookupPerfilById(user.id)
   }
 
   if (!perfilId && user.email) {
@@ -85,6 +102,7 @@ export async function ensurePerfilForUser(
   }
 
   if (baseResolution.perfilId) {
+    await syncUsuarioClienteId(supabase, user, baseResolution.perfilId)
     return baseResolution
   }
 
@@ -123,6 +141,7 @@ export async function ensurePerfilForUser(
     if (!error && data?.id) {
       const candidateIds = new Set(baseResolution.candidateIds)
       candidateIds.add(data.id)
+      await syncUsuarioClienteId(supabase, user, data.id)
       return { perfilId: data.id, candidateIds: Array.from(candidateIds) }
     }
 

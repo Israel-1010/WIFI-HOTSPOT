@@ -4,6 +4,8 @@ import { getEnquetesDoCliente } from "@/app/actions/enquetes"
 import { getSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PortalPreviewClient } from "@/components/client/portal-preview-client"
+import { createClient } from "@/lib/supabase/server"
+import { ensurePerfilForUser } from "@/lib/perfis"
 
 export default async function HotspotStudioPage() {
   const session = await getSession()
@@ -12,7 +14,10 @@ export default async function HotspotStudioPage() {
     redirect("/auth/login")
   }
 
-  const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
+  const supabase = await createClient()
+  const { perfilId } = await ensurePerfilForUser(supabase, session.user)
+
+  const clienteId = session.user.cliente_id || perfilId
 
   if (!clienteId) {
     redirect("/client")

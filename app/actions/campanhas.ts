@@ -154,8 +154,13 @@ export async function createCampanha(campanha: any) {
   if (!session?.user) throw new Error("Não autenticado")
 
   const { perfilId } = await ensurePerfilForUser(supabase, session.user)
+  const autorPerfilId = session.user.cliente_id || perfilId
 
-  const clienteId = session.user.role === "cliente" ? session.user.id : session.user.cliente_id
+  if (!autorPerfilId) {
+    throw new Error("Não foi possível identificar o perfil do cliente")
+  }
+
+  const clienteId = session.user.cliente_id || autorPerfilId
 
   const basePayload = {
     nome: campanha.nome || campanha.name,
@@ -166,7 +171,6 @@ export async function createCampanha(campanha: any) {
     data_inicio: campanha.data_inicio || campanha.start_date,
     data_fim: campanha.data_fim || campanha.end_date,
     status: campanha.status || "ativa",
-    criado_por: perfilId || undefined,
   }
 
   const portuguesePayload: Record<string, any> = sanitizePayload({
@@ -177,7 +181,7 @@ export async function createCampanha(campanha: any) {
     data_inicio: basePayload.data_inicio,
     data_fim: basePayload.data_fim,
     status: basePayload.status,
-    criado_por: basePayload.criado_por,
+    criado_por: autorPerfilId,
     cliente_id: clienteId,
     criado_em: new Date().toISOString(),
     visualizacoes: 0,
@@ -209,7 +213,7 @@ export async function createCampanha(campanha: any) {
       end_date: basePayload.data_fim,
       status: statusToDb[basePayload.status] || basePayload.status,
       content: basePayload.conteudo,
-      created_by: basePayload.criado_por,
+      created_by: autorPerfilId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       client_id: clienteId,

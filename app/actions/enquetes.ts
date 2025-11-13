@@ -120,6 +120,11 @@ export async function createEnquete(formData: {
   }
 
   const { perfilId } = await ensurePerfilForUser(supabase, session.user)
+  const autorPerfilId = session.user.cliente_id || perfilId
+
+  if (!autorPerfilId) {
+    throw new Error("Não foi possível identificar o perfil do cliente")
+  }
 
   const { data: enquete, error: enqueteError } = await supabase
     .from("enquetes")
@@ -130,7 +135,7 @@ export async function createEnquete(formData: {
       data_fim: formData.data_fim || null,
       status: "ativa",
       total_respostas: 0,
-      criado_por: perfilId || undefined,
+      criado_por: autorPerfilId,
     })
     .select()
     .single()
